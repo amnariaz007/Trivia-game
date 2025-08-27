@@ -60,8 +60,9 @@ const validateConfig = () => {
   const missing = required.filter(key => !process.env[`WHATSAPP_${key.toUpperCase()}`]);
   
   if (missing.length > 0) {
-    console.error('❌ Missing WhatsApp configuration:', missing);
-    return false;
+    console.warn('⚠️  Missing WhatsApp configuration (using test mode):', missing);
+    console.log('📝 Set up WhatsApp Business Cloud API for full functionality');
+    return true; // Allow app to start in test mode
   }
   
   console.log('✅ WhatsApp configuration validated');

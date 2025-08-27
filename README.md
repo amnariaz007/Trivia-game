@@ -1,258 +1,218 @@
-# 🎮 QRush Trivia - Sudden-Death WhatsApp Game
+# 🎮 QRush Trivia - Complete System
 
-A real-time trivia game built for WhatsApp Business Cloud API with sudden-death elimination mechanics.
+A complete WhatsApp trivia game system with sudden-death elimination mechanics, featuring a modern admin dashboard.
 
-## 🚀 Features
+## 📁 Project Structure
 
-- **Sudden-Death Gameplay**: Players must answer every question correctly to stay in
-- **Real-Time Messaging**: WhatsApp integration with instant notifications
-- **Automated Reminders**: 30-minute and 5-minute game reminders
-- **Prize Splitting**: Automatic prize distribution for multiple winners
-- **Admin Dashboard**: Web interface for game management
-- **Redis Queue**: High-volume message handling
-- **PostgreSQL Database**: Reliable data storage
+```
+Trivia game/
+├── backend/              # Node.js Backend API
+│   ├── app.js           # Main server file
+│   ├── config/          # Database & WhatsApp config
+│   ├── models/          # Database models
+│   ├── routes/          # API routes
+│   ├── services/        # Business logic services
+│   ├── scripts/         # Database scripts
+│   ├── public/          # Static files
+│   └── package.json     # Backend dependencies
+├── frontend/            # Next.js Admin Dashboard
+│   ├── src/
+│   │   ├── app/         # Next.js App Router
+│   │   ├── components/  # React components
+│   │   ├── contexts/    # Authentication context
+│   │   └── services/    # API service layer
+│   └── package.json     # Frontend dependencies
+└── start-admin.sh       # Startup script
+```
+
+## 🚀 Quick Start
+
+### **Option 1: Use the Startup Script (Recommended)**
+```bash
+./start-admin.sh
+```
+
+### **Option 2: Manual Start**
+```bash
+# Terminal 1 - Start Backend
+cd backend
+npm start
+
+# Terminal 2 - Start Frontend
+cd frontend
+npm run dev
+```
+
+## 🌐 Access Points
+
+- **Backend API**: http://localhost:3000
+- **Admin Dashboard**: http://localhost:3001
+- **Health Check**: http://localhost:3000/health
+
+## 🔐 Default Credentials
+- **Username**: `admin`
+- **Password**: `test123`
 
 ## 📋 Milestone 1 - Setup & Foundations ✅
 
 ### Deliverables Completed:
-1. ✅ WhatsApp Business Cloud API with webhook integration
-2. ✅ Redis queue for high-volume message handling
-3. ✅ Database structure (users, nicknames, responses, results)
-4. ✅ One-time signup flow (nickname + WhatsApp number as ID)
+1. ✅ **WhatsApp Business Cloud API** with webhook integration
+2. ✅ **Redis queue** for high-volume message handling
+3. ✅ **Database structure** (users, nicknames, responses, results)
+4. ✅ **One-time signup flow** (nickname + WhatsApp number as ID)
+5. ✅ **Modern Admin Dashboard** (Next.js + TypeScript)
 
-## 🛠️ Setup Instructions
+## 🛠️ Backend Features
 
-### Prerequisites
-- Node.js 16+ 
-- PostgreSQL database
-- Redis server
-- WhatsApp Business Cloud API account
+### **Core Functionality**
+- **User Management**: Registration, nickname collection, activity tracking
+- **Game Management**: Create, schedule, and manage trivia games
+- **Question Management**: Add multiple-choice questions to games
+- **Notification System**: Automated reminders and announcements
+- **Queue System**: High-volume message processing with Redis
+- **Database**: Complete data persistence with PostgreSQL
 
-### 1. Environment Setup
-
-Copy the environment file and configure your settings:
-
-```bash
-cp env.example .env
-```
-
-Update `.env` with your configuration:
-
-```env
-# Server Configuration
-PORT=3000
-NODE_ENV=development
-
-# Database Configuration
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=qrush_trivia
-DB_USER=postgres
-DB_PASSWORD=your_password
-DATABASE_URL=postgresql://postgres:your_password@localhost:5432/qrush_trivia
-
-# Redis Configuration
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_URL=redis://localhost:6379
-
-# WhatsApp Business Cloud API
-WHATSAPP_TOKEN=your_whatsapp_token
-WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
-WHATSAPP_VERIFY_TOKEN=your_webhook_verify_token
-WHATSAPP_API_VERSION=v17.0
-
-# Admin Configuration
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=your_admin_password
-
-# Game Configuration
-DEFAULT_PRIZE_POOL=100
-QUESTION_TIMER=10
-MAX_PLAYERS=100
-```
-
-### 2. Install Dependencies
-
-```bash
-npm install
-```
-
-### 3. Database Setup
-
-```bash
-# Initialize database tables
-npm run init-db
-
-# Set up test data
-node scripts/test-setup.js
-```
-
-### 4. Start Services
-
-```bash
-# Start Redis (if not running)
-redis-server
-
-# Start the application
-npm start
-```
-
-## 🧪 Testing the System
-
-### 1. Access Admin Dashboard
-
-Open your browser and go to: `http://localhost:3000/admin.html`
-
-Use the credentials from your `.env` file:
-- Username: `admin`
-- Password: `your_admin_password`
-
-### 2. Test Game Flow
-
-#### Step 1: Create a Game
-1. Go to the admin dashboard
-2. Fill in the "Create New Game" form:
-   - Start Time: Set to 30 minutes from now
-   - Prize Pool: $100
-   - Number of Questions: 5
-3. Click "Create Game"
-
-#### Step 2: Add Questions
-1. Copy the Game ID from the created game
-2. In the "Add Questions" section, paste the Game ID
-3. Add questions in JSON format:
-
-```json
-[
-  {
-    "question_text": "What is the capital of France?",
-    "option_a": "London",
-    "option_b": "Paris",
-    "option_c": "Berlin",
-    "option_d": "Madrid",
-    "correct_answer": "Paris"
-  },
-  {
-    "question_text": "Which planet is known as the Red Planet?",
-    "option_a": "Venus",
-    "option_b": "Mars",
-    "option_c": "Jupiter",
-    "option_d": "Saturn",
-    "correct_answer": "Mars"
-  }
-]
-```
-
-#### Step 3: Start Registration
-1. Find your game in the "Manage Games" section
-2. Click "Start Registration"
-3. This will send announcements to all registered users
-
-#### Step 4: Test WhatsApp Integration
-1. Send a message to your WhatsApp number: "JOIN"
-2. You should receive a confirmation message
-3. Wait for the 30-minute and 5-minute reminders
-4. When the game starts, you'll receive questions with answer buttons
-
-### 3. Test User Registration
-
-#### New User Flow:
-1. Send any message to your WhatsApp number
-2. You'll receive a welcome message asking for your nickname
-3. Reply with your preferred nickname
-4. You'll be registered and can use "JOIN" to register for games
-
-#### Existing User Commands:
-- `JOIN` - Register for the current game
-- `PLAY` - Get information about upcoming games
-- `HELP` - Get game instructions
-
-## 📱 WhatsApp Webhook Setup
-
-### 1. Configure Webhook URL
-Set your webhook URL in WhatsApp Business Cloud API:
-```
-https://your-domain.com/webhook
-```
-
-### 2. Verify Token
-Use the same verify token as in your `.env` file.
-
-### 3. Test Webhook
-Send a test message to verify the webhook is working.
-
-## 🔧 API Endpoints
-
-### Admin Endpoints
-- `GET /admin/stats` - Get dashboard statistics
+### **API Endpoints**
+- `GET /health` - Server health check
+- `GET /admin/stats` - Dashboard statistics
 - `GET /admin/games` - List all games
 - `POST /admin/games` - Create new game
 - `POST /admin/games/:id/register` - Start game registration
 - `POST /admin/games/:id/start` - Start a game
-- `POST /admin/games/:id/questions` - Add questions to game
+- `POST /admin/games/:id/questions` - Add questions
+- `GET /webhook` - WhatsApp webhook verification
+- `POST /webhook` - Process WhatsApp messages
 
-### Webhook Endpoints
-- `GET /webhook` - Webhook verification
-- `POST /webhook` - Receive WhatsApp messages
+## 🎨 Frontend Features
 
-## 📊 Game Flow
+### **Admin Dashboard**
+- **Authentication**: Secure login with session management
+- **Statistics**: Real-time user counts and game status
+- **Game Creation**: Intuitive game setup interface
+- **Question Management**: JSON-based question input
+- **Game Management**: Visual status indicators and controls
+- **Responsive Design**: Works on desktop and mobile
 
-### Registration Phase
-1. Admin creates game and starts registration
-2. All users receive announcement message
-3. Users reply "JOIN" to register
-4. System sends 30-minute and 5-minute reminders
+### **Tech Stack**
+- **Framework**: Next.js 15 with App Router
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **State Management**: React Context API
 
-### Game Phase
-1. Game starts automatically at scheduled time
-2. Players receive questions with 4 answer options
-3. 10-second timer with visual countdown
-4. Wrong answer or timeout = elimination
-5. Game continues until 1 or fewer players remain
+## 📱 Game Flow
 
-### Winner Determination
-- Single winner: Full prize pool
-- Multiple winners: Prize pool split evenly
-- Winners receive direct notification
+### **Player Registration**
+1. **Game Announcement**: Admin starts registration → All users get announcement
+2. **Opt-in**: Users reply "JOIN" to register for the game
+3. **30-minute Reminder**: System automatically sends reminder
+4. **5-minute Reminder**: Final reminder before game starts
+5. **Game Start**: Players receive questions and can start playing
 
-## 🐛 Troubleshooting
+### **Game Mechanics**
+- **Sudden-Death**: One wrong answer = elimination
+- **10-Second Timers**: Visual countdown with progress indicators
+- **Randomized Answers**: Different order for each player
+- **Prize Splitting**: Automatic division for multiple winners
+- **Real-time Messaging**: WhatsApp integration with webhooks
 
-### Common Issues
+## 🗄️ Database Schema
 
-1. **Database Connection Error**
-   - Check PostgreSQL is running
-   - Verify database credentials in `.env`
+### **Tables**
+- **users**: User registration and nicknames
+- **games**: Game sessions and state
+- **questions**: Trivia questions and answers
+- **game_players**: Player participation and elimination
+- **player_answers**: Individual answer tracking
 
-2. **Redis Connection Error**
-   - Ensure Redis server is running
-   - Check Redis URL in `.env`
+### **Key Relationships**
+- Games have many Questions
+- Games have many GamePlayers
+- Users have many GamePlayers
+- Questions have many PlayerAnswers
 
-3. **WhatsApp Webhook Not Working**
-   - Verify webhook URL is accessible
-   - Check verify token matches
-   - Ensure HTTPS is enabled for production
+## 🔧 Setup Instructions
 
-4. **Messages Not Sending**
-   - Check WhatsApp API credentials
-   - Verify phone number ID
-   - Check message queue status
+### **Prerequisites**
+- Node.js 16+
+- PostgreSQL database
+- Redis server
+- WhatsApp Business Cloud API account
 
-### Debug Commands
-
+### **Backend Setup**
 ```bash
-# Check server health
-curl http://localhost:3000/health
-
-# View queue statistics
-curl -H "username: admin" -H "password: your_password" \
-  http://localhost:3000/admin/queues
-
-# Clear message queues
-curl -X POST -H "username: admin" -H "password: your_password" \
-  http://localhost:3000/admin/queues/clear
+cd backend
+cp env.example .env
+# Edit .env with your credentials
+npm install
+npm run init-db
+npm start
 ```
+
+### **Frontend Setup**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+### **Environment Configuration**
+```env
+# Backend (.env)
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=qrush_trivia
+DB_USER=apple
+DB_PASSWORD=
+REDIS_URL=redis://localhost:6379
+WHATSAPP_TOKEN=your_token
+WHATSAPP_PHONE_NUMBER_ID=your_id
+WHATSAPP_VERIFY_TOKEN=your_verify_token
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=test123
+
+# Frontend (.env.local)
+NEXT_PUBLIC_API_URL=http://localhost:3000
+```
+
+## 🧪 Testing
+
+### **Backend Testing**
+```bash
+cd backend
+npm run setup-test
+curl http://localhost:3000/health
+curl -H "username: admin" -H "password: test123" http://localhost:3000/admin/stats
+```
+
+### **Frontend Testing**
+1. Open http://localhost:3001
+2. Login with admin/test123
+3. Create a test game
+4. Add questions
+5. Start registration
+
+## 🚀 Deployment
+
+### **Backend Deployment**
+```bash
+cd backend
+npm run build
+npm start
+```
+
+### **Frontend Deployment**
+```bash
+cd frontend
+npm run build
+npm start
+```
+
+### **Production Considerations**
+- Set up proper SSL/TLS certificates
+- Configure production database
+- Set up Redis cluster
+- Configure WhatsApp production environment
+- Set up monitoring and logging
 
 ## 📈 Next Steps (Milestone 2)
 
@@ -264,8 +224,13 @@ curl -X POST -H "username: admin" -H "password: your_password" \
 
 ## 🤝 Support
 
-For issues or questions, check the logs in your terminal or contact the development team.
+For issues or questions:
+- Check the logs in your terminal
+- Review the health endpoints
+- Contact the development team
 
 ---
 
 **QRush Trivia** - Making trivia exciting, one question at a time! 🎉
+
+**Status**: ✅ Milestone 1 Complete - Ready for Milestone 2

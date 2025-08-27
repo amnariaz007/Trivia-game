@@ -72,6 +72,7 @@ router.get('/games', async (req, res) => {
         attributes: ['status'],
         include: [{
           model: User,
+          as: 'user',
           attributes: ['nickname']
         }]
       }],
