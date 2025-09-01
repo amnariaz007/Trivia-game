@@ -7,6 +7,7 @@ import StatsCard from '@/components/StatsCard';
 import CreateGameForm from '@/components/CreateGameForm';
 import AddQuestionsForm from '@/components/AddQuestionsForm';
 import GamesList from '@/components/GamesList';
+import UsersList from '@/components/UsersList';
 
 interface DashboardStats {
   users: number;
@@ -132,6 +133,12 @@ export default function DashboardPage() {
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">🎮 Manage Games</h2>
           <GamesList games={games} onGameUpdated={loadDashboard} />
+        </div>
+
+        {/* Users Management Section */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">👥 Manage Users</h2>
+          <UsersList />
         </div>
       </div>
     </div>

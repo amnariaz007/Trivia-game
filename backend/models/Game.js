@@ -1,4 +1,4 @@
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 
 const Game = sequelize.define('Game', {
@@ -103,7 +103,7 @@ Game.getScheduledGames = function() {
     where: {
       status: 'scheduled',
       start_time: {
-        [sequelize.Op.gt]: new Date()
+        [Op.gt]: new Date()
       }
     },
     order: [['start_time', 'ASC']]

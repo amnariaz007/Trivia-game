@@ -45,6 +45,40 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
     }
   };
 
+  const handleEndGame = async (gameId: string) => {
+    setLoading(gameId);
+    try {
+      const result = await apiService.endGame(gameId);
+      alert(`Game ended successfully! Winners: ${result.winners.join(', ')}`);
+      onGameUpdated();
+    } catch (error) {
+      alert('Error ending game');
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleExportCSV = async (gameId: string) => {
+    setLoading(gameId);
+    try {
+      const blob = await apiService.exportGameCSV(gameId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `qrush-trivia-game-${gameId}-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      alert('CSV exported successfully!');
+    } catch (error) {
+      alert('Error exporting CSV');
+    } finally {
+      setLoading(null);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled':
@@ -106,6 +140,26 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
                       className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium disabled:opacity-50"
                     >
                       {loading === game.id ? 'Starting...' : 'Start Game'}
+                    </button>
+                  )}
+                  
+                  {game.status === 'in_progress' && (
+                    <button
+                      onClick={() => handleEndGame(game.id)}
+                      disabled={loading === game.id}
+                      className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-medium disabled:opacity-50"
+                    >
+                      {loading === game.id ? 'Ending...' : 'End Game'}
+                    </button>
+                  )}
+                  
+                  {game.status === 'finished' && (
+                    <button
+                      onClick={() => handleExportCSV(game.id)}
+                      disabled={loading === game.id}
+                      className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm font-medium disabled:opacity-50"
+                    >
+                      {loading === game.id ? 'Exporting...' : 'Export CSV'}
                     </button>
                   )}
                   

@@ -1,6 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const { User, Game, Question, GamePlayer, PlayerAnswer } = require('../models');
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
+
+// Configure multer for file uploads
+const upload = multer({ 
+  dest: 'uploads/',
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'), false);
+    }
+  },
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
 
 // Basic authentication middleware (will be enhanced in Week 3)
 const authenticateAdmin = (req, res, next) => {
@@ -187,6 +205,8 @@ router.post('/queues/clear', async (req, res) => {
   }
 });
 
+
+
 // Add questions to a game
 router.post('/games/:id/questions', async (req, res) => {
   try {
@@ -226,6 +246,112 @@ router.post('/games/:id/questions', async (req, res) => {
   }
 });
 
+// Import questions from CSV file
+router.post('/games/:id/questions/import-csv', upload.single('csvFile'), async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'CSV file is required' });
+    }
+    
+    const game = await Game.findByPk(gameId);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+    
+    const questions = [];
+    const errors = [];
+    
+    // Parse CSV file
+    fs.createReadStream(req.file.path)
+      .pipe(csv())
+      .on('data', (row) => {
+        // Validate required fields
+        const requiredFields = ['question_text', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer'];
+        const missingFields = requiredFields.filter(field => !row[field] || row[field].trim() === '');
+        
+        if (missingFields.length > 0) {
+          errors.push(`Row ${questions.length + 1}: Missing fields: ${missingFields.join(', ')}`);
+          return;
+        }
+        
+        // Validate correct answer is one of the options
+        const options = [row.option_a, row.option_b, row.option_c, row.option_d];
+        if (!options.includes(row.correct_answer)) {
+          errors.push(`Row ${questions.length + 1}: Correct answer must be one of the options`);
+          return;
+        }
+        
+        questions.push({
+          question_text: row.question_text.trim(),
+          option_a: row.option_a.trim(),
+          option_b: row.option_b.trim(),
+          option_c: row.option_c.trim(),
+          option_d: row.option_d.trim(),
+          correct_answer: row.correct_answer.trim()
+        });
+      })
+      .on('end', async () => {
+        try {
+          // Clean up uploaded file
+          fs.unlinkSync(req.file.path);
+          
+          if (questions.length === 0) {
+            return res.status(400).json({ 
+              error: 'No valid questions found in CSV file',
+              details: errors
+            });
+          }
+          
+          // Create questions in database
+          const createdQuestions = [];
+          for (let i = 0; i < questions.length; i++) {
+            const questionData = questions[i];
+            const question = await Question.create({
+              game_id: gameId,
+              question_text: questionData.question_text,
+              option_a: questionData.option_a,
+              option_b: questionData.option_b,
+              option_c: questionData.option_c,
+              option_d: questionData.option_d,
+              correct_answer: questionData.correct_answer,
+              question_order: i + 1
+            });
+            createdQuestions.push(question);
+          }
+          
+          res.json({
+            message: `${createdQuestions.length} questions imported successfully`,
+            imported: createdQuestions.length,
+            errors: errors.length > 0 ? errors : undefined,
+            questions: createdQuestions
+          });
+          
+        } catch (error) {
+          console.error('❌ Error creating questions from CSV:', error);
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      })
+      .on('error', (error) => {
+        console.error('❌ Error parsing CSV:', error);
+        // Clean up uploaded file
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: 'Error parsing CSV file' });
+      });
+      
+  } catch (error) {
+    console.error('❌ Error importing CSV:', error);
+    // Clean up uploaded file
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Start game registration
 router.post('/games/:id/register', async (req, res) => {
   try {
@@ -240,18 +366,31 @@ router.post('/games/:id/register', async (req, res) => {
     game.status = 'pre_game';
     await game.save();
     
-    // Send game announcement to all users
-    const notificationService = require('../services/notificationService');
-    await notificationService.sendGameAnnouncement(gameId);
+    // Add all active users to the game as alive players
+    const users = await User.findAll({ where: { is_active: true } });
+    let addedCount = 0;
     
-    // Schedule reminders
-    await notificationService.scheduleGameReminders(gameId);
+    for (const user of users) {
+      const existingPlayer = await GamePlayer.findOne({
+        where: { game_id: gameId, user_id: user.id }
+      });
+      
+      if (!existingPlayer) {
+        await GamePlayer.create({
+          game_id: gameId,
+          user_id: user.id,
+          status: 'alive'
+        });
+        addedCount++;
+      }
+    }
     
-    const users = await User.count({ where: { is_active: true } });
+    console.log(`✅ Added ${addedCount} users to game ${gameId}`);
     
     res.json({ 
       message: 'Registration started', 
-      userCount: users,
+      userCount: users.length,
+      addedCount: addedCount,
       gameId: gameId,
       startTime: game.start_time,
       prizePool: game.prize_pool
@@ -297,6 +436,36 @@ router.post('/games/:id/start', async (req, res) => {
   }
 });
 
+// Force end a game (admin function)
+router.post('/games/:id/end', async (req, res) => {
+  try {
+    const gameId = req.params.id;
+    const gameService = require('../services/gameService');
+    
+    const game = await Game.findByPk(gameId);
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+    
+    if (game.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Game is not in progress' });
+    }
+    
+    // Force end the game
+    const result = await gameService.forceEndGame(gameId);
+    
+    res.json({ 
+      message: 'Game ended successfully', 
+      gameId,
+      winners: result.winners,
+      winnerCount: result.winnerCount
+    });
+  } catch (error) {
+    console.error('❌ Error ending game:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get all questions for a game
 router.get('/games/:id/questions', async (req, res) => {
   try {
@@ -325,12 +494,9 @@ router.get('/games/:id/export', async (req, res) => {
           include: [{ model: User, as: 'user' }]
         },
         {
-          model: PlayerAnswer,
-          as: 'answers',
-          include: [
-            { model: User, as: 'user' },
-            { model: Question, as: 'question' }
-          ]
+          model: Question,
+          as: 'questions',
+          order: [['question_order', 'ASC']]
         }
       ]
     });
@@ -338,20 +504,145 @@ router.get('/games/:id/export', async (req, res) => {
     if (!game) {
       return res.status(404).json({ error: 'Game not found' });
     }
+
+    // Get all player answers for this game
+    const playerAnswers = await PlayerAnswer.findAll({
+      where: { game_id: gameId },
+      include: [
+        { model: User, as: 'user' },
+        { model: Question, as: 'question' }
+      ],
+      order: [
+        [{ model: User, as: 'user' }, 'nickname', 'ASC'],
+        ['question_number', 'ASC']
+      ]
+    });
+
+    // Generate comprehensive CSV content
+    let csv = '';
     
-    // Generate CSV content
-    let csv = 'Player,Question,Answer,Correct,Timestamp\n';
+    // Game Summary Section
+    csv += 'GAME SUMMARY\n';
+    csv += `Game ID,${game.id}\n`;
+    csv += `Status,${game.status}\n`;
+    csv += `Start Time,${game.start_time}\n`;
+    csv += `End Time,${game.end_time || 'N/A'}\n`;
+    csv += `Prize Pool,$${game.prize_pool}\n`;
+    csv += `Total Players,${game.players.length}\n`;
+    csv += `Total Questions,${game.questions.length}\n`;
+    csv += `Winner Count,${game.winner_count || 0}\n`;
+    csv += `Prize Per Winner,${game.winner_count > 0 ? `$${(game.prize_pool / game.winner_count).toFixed(2)}` : 'N/A'}\n`;
+    csv += '\n';
     
-    for (const answer of game.answers) {
-      csv += `"${answer.user.nickname}","${answer.question.question_text}","${answer.answer}","${answer.is_correct ? 'Yes' : 'No'}","${answer.created_at}"\n`;
+    // Player Summary Section
+    csv += 'PLAYER SUMMARY\n';
+    csv += 'Nickname,WhatsApp Number,Status,Elimination Round,Final Position\n';
+    
+    const playersWithAnswers = game.players.map(player => {
+      const playerAnswersForGame = playerAnswers.filter(pa => pa.user_id === player.user_id);
+      const lastCorrectAnswer = playerAnswersForGame.filter(pa => pa.is_correct).pop();
+      const eliminationRound = lastCorrectAnswer ? lastCorrectAnswer.question.question_order + 1 : 1;
+      
+      return {
+        nickname: player.user.nickname,
+        whatsapp: player.user.whatsapp_number,
+        status: player.status,
+        eliminationRound: player.status === 'eliminated' ? eliminationRound : game.questions.length,
+        position: player.status === 'winner' ? 'Winner' : `Eliminated Round ${eliminationRound}`
+      };
+    });
+    
+    playersWithAnswers.forEach(player => {
+      csv += `"${player.nickname}","${player.whatsapp}","${player.status}","${player.eliminationRound}","${player.position}"\n`;
+    });
+    
+    csv += '\n';
+    
+    // Detailed Answers Section
+    csv += 'DETAILED ANSWERS\n';
+    csv += 'Nickname,Question Number,Question Text,Player Answer,Correct Answer,Is Correct,Response Time\n';
+    
+    playerAnswers.forEach(answer => {
+      const responseTime = answer.response_time_ms ? 
+        `${answer.response_time_ms}ms` : 'N/A';
+      
+      csv += `"${answer.user.nickname}","${answer.question_number}","${answer.question.question_text}","${answer.selected_answer}","${answer.question.correct_answer}","${answer.is_correct ? 'Yes' : 'No'}","${responseTime}"\n`;
+    });
+    
+    csv += '\n';
+    
+    // Winners Section (if game is finished)
+    if (game.status === 'finished' && game.winner_count > 0) {
+      csv += 'WINNERS\n';
+      csv += 'Nickname,WhatsApp Number,Prize Amount\n';
+      
+      const winners = game.players.filter(p => p.status === 'winner');
+      const prizePerWinner = (game.prize_pool / game.winner_count).toFixed(2);
+      
+      winners.forEach(winner => {
+        csv += `"${winner.user.nickname}","${winner.user.whatsapp_number}","$${prizePerWinner}"\n`;
+      });
     }
     
+    // Set headers for CSV download
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="game-${gameId}-results.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="qrush-trivia-game-${gameId}-${new Date().toISOString().split('T')[0]}.csv"`);
     res.send(csv);
     
   } catch (error) {
     console.error('❌ Error exporting game results:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Test CSV export with sample data
+router.get('/test-csv-export', async (req, res) => {
+  try {
+    // Generate sample CSV content
+    let csv = '';
+    
+    // Game Summary Section
+    csv += 'GAME SUMMARY\n';
+    csv += 'Game ID,test-game-123\n';
+    csv += 'Status,finished\n';
+    csv += 'Start Time,2025-08-28 10:00:00\n';
+    csv += 'End Time,2025-08-28 10:30:00\n';
+    csv += 'Prize Pool,$100.00\n';
+    csv += 'Total Players,2\n';
+    csv += 'Total Questions,3\n';
+    csv += 'Winner Count,1\n';
+    csv += 'Prize Per Winner,$100.00\n';
+    csv += '\n';
+    
+    // Player Summary Section
+    csv += 'PLAYER SUMMARY\n';
+    csv += 'Nickname,WhatsApp Number,Status,Elimination Round,Final Position\n';
+    csv += '"TestUser1","1234567890","winner","3","Winner"\n';
+    csv += '"TestUser2","0987654321","eliminated","2","Eliminated Round 2"\n';
+    csv += '\n';
+    
+    // Detailed Answers Section
+    csv += 'DETAILED ANSWERS\n';
+    csv += 'Nickname,Question Number,Question Text,Player Answer,Correct Answer,Is Correct,Response Time\n';
+    csv += '"TestUser1","1","What is the capital of France?","Paris","Paris","Yes","5000ms"\n';
+    csv += '"TestUser1","2","Which planet is known as the Red Planet?","Mars","Mars","Yes","3000ms"\n';
+    csv += '"TestUser1","3","What is 2 + 2?","4","4","Yes","2000ms"\n';
+    csv += '"TestUser2","1","What is the capital of France?","Paris","Paris","Yes","7000ms"\n';
+    csv += '"TestUser2","2","Which planet is known as the Red Planet?","Venus","Mars","No","8000ms"\n';
+    csv += '\n';
+    
+    // Winners Section
+    csv += 'WINNERS\n';
+    csv += 'Nickname,WhatsApp Number,Prize Amount\n';
+    csv += '"TestUser1","1234567890","$100.00"\n';
+    
+    // Set headers for CSV download
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="test-csv-export-${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+    
+  } catch (error) {
+    console.error('❌ Error in test CSV export:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

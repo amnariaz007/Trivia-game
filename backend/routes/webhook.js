@@ -120,7 +120,7 @@ async function processMessage(message, contact) {
     
     if (!user) {
       // New user - start registration flow
-      await handleNewUser(phoneNumber, messageText || buttonResponse);
+      await handleNewUser(phoneNumber, messageText || buttonResponse, contact);
       return;
     }
 
@@ -133,13 +133,16 @@ async function processMessage(message, contact) {
 }
 
 // Handle new user registration
-async function handleNewUser(phoneNumber, messageText) {
+async function handleNewUser(phoneNumber, messageText, contact) {
   try {
-    // Create user with temporary nickname
+    // Use WhatsApp contact name if available, otherwise use temporary nickname
+    const whatsappName = contact?.profile?.name || `Player_${phoneNumber.slice(-4)}`;
+    
+    // Create user with WhatsApp name
     const user = await User.create({
       whatsapp_number: phoneNumber,
-      nickname: `Player_${phoneNumber.slice(-4)}`,
-      registration_completed: false
+      nickname: whatsappName,
+      registration_completed: true // Auto-complete registration with WhatsApp name
     });
 
     // Send welcome message
@@ -148,20 +151,14 @@ async function handleNewUser(phoneNumber, messageText) {
     
     await queueService.addMessage('send_message', {
       to: phoneNumber,
-      message: `🎉 Welcome to QRush Trivia!
+      message: `🎉 Welcome to QRush Trivia, ${whatsappName}!
 
 It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
 
 💰 Today's prize pool: $${prizePool}
 ⏰ Next game: ${nextGameTime}
 
-What's your nickname? (Reply with your preferred nickname)`
-    });
-
-    // Set registration session
-    await queueService.setSession(user.id, {
-      state: 'awaiting_nickname',
-      phoneNumber
+You're all set! Reply "PLAY" to join the next game or "HELP" for more info.`
     });
 
   } catch (error) {
@@ -192,6 +189,9 @@ async function handleExistingUser(user, messageText, buttonResponse) {
         break;
       case 'HELP':
         await handleHelpCommand(user);
+        break;
+      case 'NICKNAME':
+        await handleNicknameChange(user, messageText);
         break;
       default:
         await handleGameAnswer(user, command);
@@ -374,6 +374,11 @@ async function handleHelpCommand(user) {
 • If multiple players survive the final question, the prize pool is split evenly.
 • Winners are DM'd directly.
 
+📱 Commands:
+• PLAY - Join next game
+• HELP - Show this message
+• NICKNAME [name] - Change your nickname
+
 ⏰ Next game: ${nextGameTime}
 💰 Prize: $${prizePool}
 
@@ -406,6 +411,35 @@ async function handleGameAnswer(user, answer) {
 
   } catch (error) {
     console.error('❌ Error handling game answer:', error);
+    await queueService.addMessage('send_message', {
+      to: user.whatsapp_number,
+      message: '❌ Something went wrong. Please try again.'
+    });
+  }
+}
+
+// Handle nickname change
+async function handleNicknameChange(user, newNickname) {
+  try {
+    if (!newNickname || newNickname.length < 2 || newNickname.length > 50) {
+      await queueService.addMessage('send_message', {
+        to: user.whatsapp_number,
+        message: 'Please provide a nickname between 2-50 characters. Example: NICKNAME John'
+      });
+      return;
+    }
+
+    // Update user nickname
+    user.nickname = newNickname;
+    await user.save();
+
+    await queueService.addMessage('send_message', {
+      to: user.whatsapp_number,
+      message: `✅ Your nickname has been updated to: ${newNickname}`
+    });
+
+  } catch (error) {
+    console.error('❌ Error handling nickname change:', error);
     await queueService.addMessage('send_message', {
       to: user.whatsapp_number,
       message: '❌ Something went wrong. Please try again.'

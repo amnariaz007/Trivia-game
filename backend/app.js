@@ -5,7 +5,7 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002;
 
 // Import database and models
 const { sequelize, testConnection } = require('./config/database');
@@ -23,7 +23,7 @@ app.use(helmet());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://yourdomain.com'] 
-    : ['http://localhost:3000', 'http://localhost:3001'],
+    : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
   credentials: true
 }));
 
@@ -95,6 +95,8 @@ async function initializeApp() {
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
       console.log(`📊 Admin dashboard: http://localhost:${PORT}/admin`);
     });
+    
+
     
   } catch (error) {
     console.error('❌ Application initialization failed:', error);

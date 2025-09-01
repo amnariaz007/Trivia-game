@@ -75,6 +75,12 @@ class ApiService {
     });
   }
 
+  async endGame(id: string) {
+    return this.request(`/admin/games/${id}/end`, {
+      method: 'POST',
+    });
+  }
+
   // Questions
   async getGameQuestions(gameId: string) {
     return this.request(`/admin/games/${gameId}/questions`);
@@ -85,6 +91,30 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ questions }),
     });
+  }
+
+  async importQuestionsCSV(gameId: string, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('csvFile', file);
+    
+    const url = `${API_BASE_URL}/admin/games/${gameId}/questions/import-csv`;
+    const credentials = localStorage.getItem('admin_credentials');
+    const [username, password] = credentials ? credentials.split(':') : ['', ''];
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'username': username,
+        'password': password,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Import failed: ${response.statusText}`);
+    }
+
+    return response.json();
   }
 
   // Users
@@ -101,6 +131,20 @@ class ApiService {
     return this.request('/admin/queues/clear', {
       method: 'POST',
     });
+  }
+
+  // Export game results as CSV
+  async exportGameCSV(gameId: string): Promise<Blob> {
+    const url = `${API_BASE_URL}/admin/games/${gameId}/export`;
+    const response = await fetch(url, {
+      headers: this.getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Export failed: ${response.statusText}`);
+    }
+
+    return response.blob();
   }
 }
 

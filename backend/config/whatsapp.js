@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const whatsappConfig = {
-  token: process.env.WHATSAPP_TOKEN,
+  token: process.env.WHATSAPP_ACCESS_TOKEN,
   phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
   verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
   apiVersion: process.env.WHATSAPP_API_VERSION || 'v17.0',
@@ -48,7 +48,7 @@ const whatsappConfig = {
     baseURL: `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION || 'v17.0'}`,
     timeout: 10000,
     headers: {
-      'Authorization': `Bearer ${process.env.WHATSAPP_TOKEN}`,
+      'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
       'Content-Type': 'application/json'
     }
   })
@@ -56,8 +56,8 @@ const whatsappConfig = {
 
 // Validate configuration
 const validateConfig = () => {
-  const required = ['token', 'phoneNumberId', 'verifyToken'];
-  const missing = required.filter(key => !process.env[`WHATSAPP_${key.toUpperCase()}`]);
+  const required = ['ACCESS_TOKEN', 'PHONE_NUMBER_ID', 'VERIFY_TOKEN'];
+  const missing = required.filter(key => !process.env[`WHATSAPP_${key}`]);
   
   if (missing.length > 0) {
     console.warn('⚠️  Missing WhatsApp configuration (using test mode):', missing);

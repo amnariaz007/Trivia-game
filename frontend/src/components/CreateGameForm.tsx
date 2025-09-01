@@ -15,14 +15,28 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [gameId, setGameId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
+    setGameId(null);
 
     try {
-      await apiService.createGame(formData);
+      const result = await apiService.createGame(formData);
+      setGameId(result.id);
       setMessage('Game created successfully!');
       setFormData({
         startTime: '',
@@ -51,7 +65,7 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
               value={formData.startTime}
               onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             />
           </div>
 
@@ -67,7 +81,7 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
               value={formData.prizePool}
               onChange={(e) => setFormData({ ...formData, prizePool: parseFloat(e.target.value) })}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             />
           </div>
 
@@ -83,14 +97,37 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
               value={formData.totalQuestions}
               onChange={(e) => setFormData({ ...formData, totalQuestions: parseInt(e.target.value) })}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             />
           </div>
         </div>
 
         {message && (
-          <div className={`p-3 rounded ${message.includes('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-            {message}
+          <div className={`p-4 rounded-lg border ${message.includes('Error') ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">{message}</p>
+                {gameId && (
+                  <div className="mt-2">
+                    <p className="text-sm text-green-600">Game ID: <span className="font-mono font-bold">{gameId}</span></p>
+                    <p className="text-xs text-green-500 mt-1">Use this ID to add questions to the game</p>
+                  </div>
+                )}
+              </div>
+              {gameId && (
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(gameId)}
+                  className={`ml-4 px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    copied 
+                      ? 'bg-green-600 text-white' 
+                      : 'bg-green-100 text-green-700 hover:bg-green-200'
+                  }`}
+                >
+                  {copied ? '✓ Copied!' : '📋 Copy ID'}
+                </button>
+              )}
+            </div>
           </div>
         )}
 

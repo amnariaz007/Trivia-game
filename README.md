@@ -28,20 +28,20 @@ Trivia game/
 ## 🚀 Quick Start
 
 ### **Option 1: Use the Startup Script (Recommended)**
-```bash
+   ```bash
 ./start-admin.sh
-```
+   ```
 
 ### **Option 2: Manual Start**
-```bash
+   ```bash
 # Terminal 1 - Start Backend
 cd backend
 npm start
 
 # Terminal 2 - Start Frontend
 cd frontend
-npm run dev
-```
+   npm run dev
+   ```
 
 ## 🌐 Access Points
 
