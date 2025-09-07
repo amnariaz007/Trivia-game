@@ -1,7 +1,7 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 class ApiService {
-  private getAuthHeaders() {
+  private getAuthHeaders(): Record<string, string> {
     const credentials = localStorage.getItem('admin_credentials');
     if (!credentials) {
       return {
@@ -36,62 +36,57 @@ class ApiService {
   }
 
   // Dashboard Stats
-  async getStats() {
+  async getStats(): Promise<any> {
     return this.request('/admin/stats');
   }
 
   // Games
-  async getGames() {
+  async getGames(): Promise<any[]> {
     return this.request('/admin/games');
   }
 
-  async createGame(data: { startTime: string; prizePool: number; totalQuestions: number }) {
+  async createGame(data: { startTime: string; prizePool: number; totalQuestions: number }): Promise<any> {
     return this.request('/admin/games', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async getGame(id: string) {
+  async getGame(id: string): Promise<any> {
     return this.request(`/admin/games/${id}`);
   }
 
-  async updateGameStatus(id: string, status: string) {
+  async updateGameStatus(id: string, status: string): Promise<any> {
     return this.request(`/admin/games/${id}/status`, {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     });
   }
 
-  async startGameRegistration(id: string) {
+  async startGameRegistration(id: string): Promise<any> {
     return this.request(`/admin/games/${id}/register`, {
       method: 'POST',
     });
   }
 
-  async startGame(id: string) {
+  async startGame(id: string): Promise<any> {
     return this.request(`/admin/games/${id}/start`, {
       method: 'POST',
     });
   }
 
-  async endGame(id: string) {
+  async endGame(id: string): Promise<any> {
     return this.request(`/admin/games/${id}/end`, {
       method: 'POST',
     });
   }
 
   // Questions
-  async getGameQuestions(gameId: string) {
+  async getGameQuestions(gameId: string): Promise<any[]> {
     return this.request(`/admin/games/${gameId}/questions`);
   }
 
-  async addQuestions(gameId: string, questions: any[]) {
-    return this.request(`/admin/games/${gameId}/questions`, {
-      method: 'POST',
-      body: JSON.stringify({ questions }),
-    });
-  }
+
 
   async importQuestionsCSV(gameId: string, file: File): Promise<any> {
     const formData = new FormData();
@@ -118,16 +113,16 @@ class ApiService {
   }
 
   // Users
-  async getUsers() {
+  async getUsers(): Promise<any[]> {
     return this.request('/admin/users');
   }
 
   // Queue Stats
-  async getQueueStats() {
+  async getQueueStats(): Promise<any> {
     return this.request('/admin/queues');
   }
 
-  async clearQueues() {
+  async clearQueues(): Promise<any> {
     return this.request('/admin/queues/clear', {
       method: 'POST',
     });

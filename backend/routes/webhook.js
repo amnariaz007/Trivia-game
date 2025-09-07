@@ -4,7 +4,7 @@ const Joi = require('joi');
 
 const whatsappService = require('../services/whatsappService');
 const queueService = require('../services/queueService');
-const { User, Game } = require('../models');
+const { User, Game, GamePlayer } = require('../models');
 
 // Webhook verification
 router.get('/', (req, res) => {
@@ -22,7 +22,9 @@ router.get('/', (req, res) => {
 // Message webhook
 router.post('/', async (req, res) => {
   try {
-    console.log('📥 Received webhook:', JSON.stringify(req.body, null, 2));
+    console.log('📥 Received webhook at:', new Date().toISOString());
+    console.log('📥 Webhook body:', JSON.stringify(req.body, null, 2));
+    console.log('📥 Webhook headers:', JSON.stringify(req.headers, null, 2));
     
     // Validate webhook structure
     const webhookSchema = Joi.object({
@@ -109,9 +111,12 @@ router.post('/', async (req, res) => {
 // Process individual message
 async function processMessage(message, contact) {
   try {
+    console.log('🔍 Processing message:', JSON.stringify(message, null, 2));
+    console.log('🔍 Contact info:', JSON.stringify(contact, null, 2));
+    
     const phoneNumber = message.from;
-    const messageText = whatsappService.extractMessageText(message);
-    const buttonResponse = whatsappService.extractButtonResponse(message);
+    const messageText = message.text?.body || message.interactive?.button_reply?.title || '';
+    const buttonResponse = message.interactive?.button_reply?.title || '';
 
     console.log(`📱 Processing message from ${phoneNumber}: ${messageText || buttonResponse}`);
 
@@ -135,31 +140,42 @@ async function processMessage(message, contact) {
 // Handle new user registration
 async function handleNewUser(phoneNumber, messageText, contact) {
   try {
-    // Use WhatsApp contact name if available, otherwise use temporary nickname
-    const whatsappName = contact?.profile?.name || `Player_${phoneNumber.slice(-4)}`;
+    console.log('🆕 Creating new user for phone number:', phoneNumber);
     
-    // Create user with WhatsApp name
+    // Create user with temporary nickname and incomplete registration
     const user = await User.create({
       whatsapp_number: phoneNumber,
-      nickname: whatsappName,
-      registration_completed: true // Auto-complete registration with WhatsApp name
+      nickname: `Player_${phoneNumber.slice(-4)}`, // Temporary nickname
+      registration_completed: false // Registration not complete until nickname is set
     });
-
-    // Send welcome message
-    const nextGameTime = await getNextGameTime();
-    const prizePool = process.env.DEFAULT_PRIZE_POOL || 100;
     
-    await queueService.addMessage('send_message', {
-      to: phoneNumber,
-      message: `🎉 Welcome to QRush Trivia, ${whatsappName}!
+    console.log('✅ User created:', user.id);
 
-It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
-
-💰 Today's prize pool: $${prizePool}
-⏰ Next game: ${nextGameTime}
-
-You're all set! Reply "PLAY" to join the next game or "HELP" for more info.`
+    // Start registration session
+    console.log('📝 Setting up nickname session for user:', user.id);
+    await queueService.setSession(user.id, {
+      state: 'awaiting_nickname',
+      timestamp: new Date()
     });
+    console.log('✅ Session created');
+
+    // Send welcome template message asking for nickname
+    console.log('📤 Sending welcome template to:', phoneNumber);
+    
+    try {
+      const whatsappService = require('../services/whatsappService');
+      await whatsappService.sendTemplateMessage(phoneNumber, 'welcome', 'en_US');
+      console.log('✅ Welcome template sent successfully');
+    } catch (error) {
+      console.error('❌ Error sending template:', error);
+      // Fallback to queue
+      await queueService.addMessage('send_template', {
+        to: phoneNumber,
+        templateName: 'welcome',
+        language: 'en_US'
+      });
+      console.log('✅ Welcome template queued as fallback');
+    }
 
   } catch (error) {
     console.error('❌ Error handling new user:', error);
@@ -174,6 +190,56 @@ async function handleExistingUser(user, messageText, buttonResponse) {
     
     if (session && session.state === 'awaiting_nickname') {
       await handleNicknameRegistration(user, messageText);
+      return;
+    }
+
+    // Check if registration is not completed
+    if (!user.registration_completed) {
+      // User exists but registration is incomplete, restart nickname flow
+      await queueService.setSession(user.id, {
+        state: 'awaiting_nickname',
+        timestamp: new Date()
+      });
+      
+      // Send welcome template message asking for nickname
+      try {
+        const whatsappService = require('../services/whatsappService');
+        await whatsappService.sendTemplateMessage(user.whatsapp_number, 'welcome', 'en_US');
+        console.log('✅ Welcome template sent successfully to existing user');
+      } catch (error) {
+        console.error('❌ Error sending template:', error);
+        // Fallback to queue
+        await queueService.addMessage('send_template', {
+          to: user.whatsapp_number,
+          templateName: 'welcome',
+          language: 'en_US'
+        });
+        console.log('✅ Welcome template queued as fallback');
+      }
+      return;
+    }
+
+    // Check if this is a new user's first message (they might have been created but not completed registration)
+    if (user.nickname === `Player_${user.whatsapp_number.slice(-4)}`) {
+      // This is a new user with default nickname, ask for nickname
+      await queueService.setSession(user.id, {
+        state: 'awaiting_nickname',
+        timestamp: new Date()
+      });
+      
+      try {
+        const whatsappService = require('../services/whatsappService');
+        await whatsappService.sendTemplateMessage(user.whatsapp_number, 'welcome', 'en_US');
+        console.log('✅ Welcome template sent to new user with default nickname');
+      } catch (error) {
+        console.error('❌ Error sending template:', error);
+        await queueService.addMessage('send_template', {
+          to: user.whatsapp_number,
+          templateName: 'welcome',
+          language: 'en_US'
+        });
+        console.log('✅ Welcome template queued as fallback');
+      }
       return;
     }
 

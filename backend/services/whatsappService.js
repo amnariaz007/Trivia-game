@@ -25,6 +25,29 @@ class WhatsAppService {
     }
   }
 
+  // Send template message
+  async sendTemplateMessage(to, templateName, language = 'en_US') {
+    try {
+      const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
+        messaging_product: 'whatsapp',
+        to: to,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: {
+            code: language
+          }
+        }
+      });
+      
+      console.log('✅ Template message sent:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error sending template message:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
   // Send interactive message with buttons
   async sendInteractiveMessage(to, body, buttons) {
     try {

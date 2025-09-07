@@ -62,3 +62,4 @@ if (!gameId) {
 }
 
 addPlayersToGame(gameId);
+

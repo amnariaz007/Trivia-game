@@ -12,6 +12,12 @@ const { sequelize, testConnection } = require('./config/database');
 const { validateConfig } = require('./config/whatsapp');
 require('./models'); // Initialize models
 
+// Import and initialize queue service
+const queueService = require('./services/queueService');
+
+// Initialize queue service to ensure process handlers are set up
+console.log('🔄 Initializing queue service...');
+
 // Import routes
 const webhookRoutes = require('./routes/webhook');
 const adminRoutes = require('./routes/admin');

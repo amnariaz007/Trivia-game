@@ -43,6 +43,8 @@ class QueueService {
         switch (type) {
           case 'send_message':
             return await this.processMessage(data);
+          case 'send_template':
+            return await this.processTemplate(data);
           case 'send_question':
             return await this.processQuestion(data);
           case 'send_elimination':
@@ -132,6 +134,12 @@ class QueueService {
     const { to, message } = data;
     const whatsappService = require('./whatsappService');
     return await whatsappService.sendTextMessage(to, message);
+  }
+
+  async processTemplate(data) {
+    const { to, templateName, language } = data;
+    const whatsappService = require('./whatsappService');
+    return await whatsappService.sendTemplateMessage(to, templateName, language);
   }
 
   async processQuestion(data) {

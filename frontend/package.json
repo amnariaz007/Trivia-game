@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "dev-full": "concurrently \"npm run dev\" \"cd .. && npm start\""
+    "dev-full": "concurrently \"npm run dev\" \"cd .. && npm start\"",
+    "deploy": "vercel --prod",
+    "preview": "vercel"
   },
   "dependencies": {
     "react": "^19",

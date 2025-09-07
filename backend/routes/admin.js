@@ -207,44 +207,7 @@ router.post('/queues/clear', async (req, res) => {
 
 
 
-// Add questions to a game
-router.post('/games/:id/questions', async (req, res) => {
-  try {
-    const gameId = req.params.id;
-    const { questions } = req.body;
-    
-    if (!questions || !Array.isArray(questions)) {
-      return res.status(400).json({ error: 'Questions array is required' });
-    }
-    
-    const game = await Game.findByPk(gameId);
-    if (!game) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-    
-    // Create questions
-    const createdQuestions = [];
-    for (let i = 0; i < questions.length; i++) {
-      const questionData = questions[i];
-      const question = await Question.create({
-        game_id: gameId,
-        question_text: questionData.question_text,
-        option_a: questionData.option_a,
-        option_b: questionData.option_b,
-        option_c: questionData.option_c,
-        option_d: questionData.option_d,
-        correct_answer: questionData.correct_answer,
-        question_order: i + 1
-      });
-      createdQuestions.push(question);
-    }
-    
-    res.status(201).json(createdQuestions);
-  } catch (error) {
-    console.error('❌ Error adding questions:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
 
 // Import questions from CSV file
 router.post('/games/:id/questions/import-csv', upload.single('csvFile'), async (req, res) => {
@@ -595,56 +558,6 @@ router.get('/games/:id/export', async (req, res) => {
   }
 });
 
-// Test CSV export with sample data
-router.get('/test-csv-export', async (req, res) => {
-  try {
-    // Generate sample CSV content
-    let csv = '';
-    
-    // Game Summary Section
-    csv += 'GAME SUMMARY\n';
-    csv += 'Game ID,test-game-123\n';
-    csv += 'Status,finished\n';
-    csv += 'Start Time,2025-08-28 10:00:00\n';
-    csv += 'End Time,2025-08-28 10:30:00\n';
-    csv += 'Prize Pool,$100.00\n';
-    csv += 'Total Players,2\n';
-    csv += 'Total Questions,3\n';
-    csv += 'Winner Count,1\n';
-    csv += 'Prize Per Winner,$100.00\n';
-    csv += '\n';
-    
-    // Player Summary Section
-    csv += 'PLAYER SUMMARY\n';
-    csv += 'Nickname,WhatsApp Number,Status,Elimination Round,Final Position\n';
-    csv += '"TestUser1","1234567890","winner","3","Winner"\n';
-    csv += '"TestUser2","0987654321","eliminated","2","Eliminated Round 2"\n';
-    csv += '\n';
-    
-    // Detailed Answers Section
-    csv += 'DETAILED ANSWERS\n';
-    csv += 'Nickname,Question Number,Question Text,Player Answer,Correct Answer,Is Correct,Response Time\n';
-    csv += '"TestUser1","1","What is the capital of France?","Paris","Paris","Yes","5000ms"\n';
-    csv += '"TestUser1","2","Which planet is known as the Red Planet?","Mars","Mars","Yes","3000ms"\n';
-    csv += '"TestUser1","3","What is 2 + 2?","4","4","Yes","2000ms"\n';
-    csv += '"TestUser2","1","What is the capital of France?","Paris","Paris","Yes","7000ms"\n';
-    csv += '"TestUser2","2","Which planet is known as the Red Planet?","Venus","Mars","No","8000ms"\n';
-    csv += '\n';
-    
-    // Winners Section
-    csv += 'WINNERS\n';
-    csv += 'Nickname,WhatsApp Number,Prize Amount\n';
-    csv += '"TestUser1","1234567890","$100.00"\n';
-    
-    // Set headers for CSV download
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="test-csv-export-${new Date().toISOString().split('T')[0]}.csv"`);
-    res.send(csv);
-    
-  } catch (error) {
-    console.error('❌ Error in test CSV export:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+
 
 module.exports = router;

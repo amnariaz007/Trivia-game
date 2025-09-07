@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Allow: /business
+Disallow: /admin/
+Disallow: /api/
+
+Sitemap: https://qrushtrivia.com/sitemap.xml

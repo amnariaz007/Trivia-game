@@ -9,29 +9,10 @@ interface AddQuestionsFormProps {
 
 export default function AddQuestionsForm({ onQuestionsAdded }: AddQuestionsFormProps) {
   const [gameId, setGameId] = useState('');
-  const [questionsText, setQuestionsText] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [activeTab, setActiveTab] = useState<'json' | 'csv'>('json');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage('');
 
-    try {
-      const questions = JSON.parse(questionsText);
-      await apiService.addQuestions(gameId, questions);
-      setMessage('Questions added successfully!');
-      setGameId('');
-      setQuestionsText('');
-      onQuestionsAdded();
-    } catch (error) {
-      setMessage('Error adding questions. Check JSON format and try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,7 +39,8 @@ export default function AddQuestionsForm({ onQuestionsAdded }: AddQuestionsFormP
 
   return (
     <div className="bg-white p-6 rounded-lg shadow">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Questions to Game</h3>
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">Import Questions from CSV</h3>
+      <p className="text-sm text-gray-600 mb-6">Upload a CSV file to add questions to your game. The file should contain question text, options, and correct answers.</p>
       
       {/* Game ID Input */}
       <div className="mb-6">
@@ -76,74 +58,11 @@ export default function AddQuestionsForm({ onQuestionsAdded }: AddQuestionsFormP
             />
       </div>
 
-      {/* Tab Navigation */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            type="button"
-            onClick={() => setActiveTab('json')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'json'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            JSON Input
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('csv')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'csv'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            CSV Import
-          </button>
-        </nav>
-      </div>
 
-      {/* JSON Tab */}
-      {activeTab === 'json' && (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="questions" className="block text-sm font-medium text-gray-700 mb-2">
-              Questions (JSON format)
-            </label>
-            <textarea
-              id="questions"
-              value={questionsText}
-              onChange={(e) => setQuestionsText(e.target.value)}
-              rows={10}
-              placeholder={`[
-  {
-    "question_text": "What is the capital of France?",
-    "option_a": "London",
-    "option_b": "Paris",
-    "option_c": "Berlin",
-    "option_d": "Madrid",
-    "correct_answer": "Paris"
-  }
-]`}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm text-gray-900 placeholder-gray-500"
-            />
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading || !gameId}
-            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-md font-medium disabled:opacity-50"
-          >
-            {loading ? 'Adding...' : 'Add Questions'}
-          </button>
-        </form>
-      )}
 
-      {/* CSV Tab */}
-      {activeTab === 'csv' && (
-        <div className="space-y-4">
+
+      <div className="space-y-4">
           <div>
             <label htmlFor="csvFile" className="block text-sm font-medium text-gray-700 mb-2">
               Upload CSV File
@@ -170,7 +89,6 @@ export default function AddQuestionsForm({ onQuestionsAdded }: AddQuestionsFormP
             </pre>
           </div>
         </div>
-      )}
 
       {/* Message Display */}
       {message && (

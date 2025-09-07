@@ -20,10 +20,11 @@ interface DashboardStats {
   recentGames: any[];
 }
 
+
 export default function DashboardPage() {
   const { isAuthenticated, loading, logout } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [games, setGames] = useState([]);
+  const [games, setGames] = useState<any[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
