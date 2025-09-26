@@ -7,38 +7,77 @@ console.log(process.env.REDIS_URL);
 
 class QueueService {
   constructor() {
-    // Create Redis connection with ioredis (Railway compatible)
-    this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-      tls: process.env.NODE_ENV === 'production' ? {} : undefined // enables SSL for Railway
-    });
+    this.redisConnected = false;
+    this.redis = null;
+    this.messageQueue = null;
+    this.gameQueue = null;
 
-    // Initialize queues with Redis URL
-    this.messageQueue = new Queue('whatsapp-messages', {
-      redis: process.env.REDIS_URL || 'redis://localhost:6379'
-    });
+    // Only initialize Redis if REDIS_URL is available
+    if (process.env.REDIS_URL) {
+      this.initializeRedis();
+    } else {
+      console.log('⚠️  REDIS_URL not found, running without Redis queues');
+    }
+  }
 
-    this.gameQueue = new Queue('game-timers', {
-      redis: process.env.REDIS_URL || 'redis://localhost:6379'
-    });
+  initializeRedis() {
+    try {
+      // Create Redis connection with ioredis (Railway compatible)
+      this.redis = new Redis(process.env.REDIS_URL, {
+        tls: process.env.NODE_ENV === 'production' ? {} : undefined, // enables SSL for Railway
+        retryDelayOnFailover: 100,
+        maxRetriesPerRequest: 3,
+        lazyConnect: true,
+        connectTimeout: 10000,
+        commandTimeout: 5000
+      });
 
-    this.setupQueueHandlers();
-    this.connectRedis();
+      // Initialize queues with Redis URL
+      this.messageQueue = new Queue('whatsapp-messages', {
+        redis: process.env.REDIS_URL
+      });
+
+      this.gameQueue = new Queue('game-timers', {
+        redis: process.env.REDIS_URL
+      });
+
+      this.setupQueueHandlers();
+      this.connectRedis();
+    } catch (error) {
+      console.error('❌ Failed to initialize Redis:', error.message);
+      this.redis = null;
+      this.messageQueue = null;
+      this.gameQueue = null;
+    }
   }
 
   async connectRedis() {
+    if (!this.redis) {
+      console.log('⚠️  Redis not initialized, skipping connection');
+      return;
+    }
+
     try {
       // ioredis connects automatically, but we can test the connection
       await this.redis.ping();
+      this.redisConnected = true;
       console.log('✅ Redis nihsaani');
       console.log('✅ Redis connected successfully');
     } catch (error) {
-      console.error('❌ Redis connection failed:', error);
-      throw error;
+      console.error('❌ Redis connection failed:', error.message);
+      console.log('⚠️  Continuing without Redis - some features may not work');
+      this.redisConnected = false;
+      // Don't throw error - let the app continue without Redis
     }
   }
 
   setupQueueHandlers() {
     console.log('🔧 Setting up queue handlers...');
+    
+    if (!this.messageQueue || !this.gameQueue) {
+      console.log('⚠️  Queues not available, skipping queue handlers setup');
+      return;
+    }
     
     // Message queue processor
     this.messageQueue.process('send_message', 1, async (job) => {
@@ -172,6 +211,11 @@ class QueueService {
 
   // Add message to queue
   async addMessage(type, data, options = {}) {
+    if (!this.messageQueue) {
+      console.log('⚠️  Message queue not available, skipping message');
+      return null;
+    }
+
     const job = await this.messageQueue.add(type, data, {
       attempts: 3,
       backoff: {
@@ -189,6 +233,11 @@ class QueueService {
 
   // Add game timer to queue
   async addGameTimer(type, data, delay = 0) {
+    if (!this.gameQueue) {
+      console.log('⚠️  Game queue not available, skipping timer');
+      return null;
+    }
+
     const job = await this.gameQueue.add(type, data, {
       delay: delay * 1000, // Convert seconds to milliseconds
       attempts: 1,

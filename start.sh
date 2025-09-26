@@ -13,6 +13,14 @@ cd backend
 echo "📦 Installing backend dependencies..."
 npm install --production
 
+# Test Redis connection
+echo "🔍 Testing Redis connection..."
+if node scripts/test-redis-connection.js; then
+  echo "✅ Redis connection test passed"
+else
+  echo "⚠️  Redis connection test failed, but continuing..."
+fi
+
 # Initialize database if needed (production-safe)
 echo "🗄️  Initializing database..."
 node scripts/init-db-production.js
