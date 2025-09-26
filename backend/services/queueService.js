@@ -1,23 +1,24 @@
 const Queue = require('bull');
-const Redis = require('redis');
+console.log("enterbull");
+const Redis = require('ioredis');
+console.log("enterbull");
+console.log(process.env.REDIS_URL);
+
 
 class QueueService {
   constructor() {
-    this.redis = Redis.createClient({
-      url: process.env.REDIS_URL || 'redis://localhost:6379'
+    // Create Redis connection with ioredis (Railway compatible)
+    this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      tls: process.env.NODE_ENV === 'production' ? {} : undefined // enables SSL for Railway
     });
 
-    // Initialize queues
+    // Initialize queues with Redis URL
     this.messageQueue = new Queue('whatsapp-messages', {
-      redis: {
-        url: process.env.REDIS_URL || 'redis://localhost:6379'
-      }
+      redis: process.env.REDIS_URL || 'redis://localhost:6379'
     });
 
     this.gameQueue = new Queue('game-timers', {
-      redis: {
-        url: process.env.REDIS_URL || 'redis://localhost:6379'
-      }
+      redis: process.env.REDIS_URL || 'redis://localhost:6379'
     });
 
     this.setupQueueHandlers();
@@ -26,7 +27,9 @@ class QueueService {
 
   async connectRedis() {
     try {
-      await this.redis.connect();
+      // ioredis connects automatically, but we can test the connection
+      await this.redis.ping();
+      console.log('✅ Redis nihsaani');
       console.log('✅ Redis connected successfully');
     } catch (error) {
       console.error('❌ Redis connection failed:', error);
