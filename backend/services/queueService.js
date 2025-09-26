@@ -18,7 +18,7 @@ class QueueService {
 
   initializeRedis() {
     if (!process.env.REDIS_URL) {
-      console.log('⚠️  REDIS_URL not found 20');
+      console.log('⚠️  REDIS_URL not found, running without Redis queues');
       return;
     }
 
@@ -30,10 +30,12 @@ class QueueService {
         // Railway Redis configuration
         tls: process.env.NODE_ENV === 'production' ? {} : undefined,
         retryDelayOnFailover: 100,
-        maxRetriesPerRequest: 3,
-        lazyConnect: true,
-        connectTimeout: 10000,
-        commandTimeout: 5000
+        maxRetriesPerRequest: 1,
+        lazyConnect: false,
+        connectTimeout: 5000,
+        commandTimeout: 3000,
+        family: 4, // Force IPv4
+        keepAlive: 30000
       });
 
       // Add explicit event listeners (Railway recommended pattern)
@@ -52,11 +54,16 @@ class QueueService {
         this.redisConnected = false;
       });
 
-      // Initialize Bull queues with Redis connection
-      this.initializeQueues();
-      
-      // Test basic Redis connection
-      this.testRedisConnection();
+      // Test connection immediately
+      this.redis.ping().then(() => {
+        console.log("✅ Redis ping successful");
+        this.redisConnected = true;
+        // Initialize Bull queues with Redis connection
+        this.initializeQueues();
+      }).catch((err) => {
+        console.error("❌ Redis ping failed:", err.message);
+        this.redisConnected = false;
+      });
       
     } catch (error) {
       console.error('❌ Failed to initialize Redis:', error.message);

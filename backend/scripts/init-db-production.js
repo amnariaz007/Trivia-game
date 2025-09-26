@@ -39,7 +39,9 @@ async function createSampleData() {
     const adminUser = await User.create({
       username: process.env.ADMIN_USERNAME || 'admin',
       password: process.env.ADMIN_PASSWORD || 'admin123',
-      role: 'admin'
+      role: 'admin',
+      whatsapp_number: '+1234567890', // Required field
+      nickname: 'Admin' // Required field
     });
     console.log('✅ Admin user created');
     
