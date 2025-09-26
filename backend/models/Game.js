@@ -60,7 +60,7 @@ const Game = sequelize.define('Game', {
       fields: ['start_time']
     },
     {
-      fields: ['created_at']
+      fields: ['createdAt']
     }
   ]
 });
@@ -94,7 +94,7 @@ Game.getActiveGame = function() {
     where: {
       status: ['scheduled', 'pre_game', 'in_progress']
     },
-    order: [['created_at', 'DESC']]
+    order: [['createdAt', 'DESC']]
   });
 };
 

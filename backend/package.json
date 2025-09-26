@@ -14,6 +14,7 @@
     "check-db-tables": "node scripts/check-db-tables.js",
     "test-redis": "node scripts/test-redis-connection.js",
     "test-ioredis": "node scripts/test-ioredis.js",
+    "test-railway-redis": "node scripts/test-railway-redis.js",
     "setup-test": "node scripts/test-setup.js"
   },
   "keywords": [

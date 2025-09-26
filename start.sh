@@ -13,12 +13,12 @@ cd backend
 echo "📦 Installing backend dependencies..."
 npm install --production
 
-# Test ioredis package
-echo "🔍 Testing ioredis package..."
-if node scripts/test-ioredis.js; then
-  echo "✅ ioredis test passed"
+# Test Railway Redis connection
+echo "🔍 Testing Railway Redis connection..."
+if node scripts/test-railway-redis.js; then
+  echo "✅ Railway Redis test passed"
 else
-  echo "⚠️  ioredis test failed, but continuing..."
+  echo "⚠️  Railway Redis test failed, but continuing..."
 fi
 
 # Initialize database if needed (production-safe)

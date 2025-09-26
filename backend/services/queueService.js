@@ -1,7 +1,7 @@
 const Queue = require('bull');
 const Redis = require('ioredis');
 
-console.log('🔧 Initializing Queue Service...');
+console.log('🔧 Initializing Queue 4');
 console.log('REDIS_URL:', process.env.REDIS_URL ? 'SET' : 'NOT SET');
 
 class QueueService {
@@ -17,7 +17,7 @@ class QueueService {
 
   initializeRedis() {
     if (!process.env.REDIS_URL) {
-      console.log('⚠️  REDIS_URL not found, running without Redis queues');
+      console.log('⚠️  REDIS_URL not found 20');
       return;
     }
 
@@ -32,20 +32,23 @@ class QueueService {
         maxRetriesPerRequest: 3,
         lazyConnect: true,
         connectTimeout: 10000,
-        commandTimeout: 5000,
-        // Connection event handlers
-        onConnect: () => {
-          console.log('✅ Redis connected successfully');
-          this.redisConnected = true;
-        },
-        onError: (error) => {
-          console.error('❌ Redis connection error:', error.message);
-          this.redisConnected = false;
-        },
-        onClose: () => {
-          console.log('⚠️  Redis connection closed');
-          this.redisConnected = false;
-        }
+        commandTimeout: 5000
+      });
+
+      // Add explicit event listeners (Railway recommended pattern)
+      this.redis.on("connect", () => {
+        console.log("✅ Connected to Redis");
+        this.redisConnected = true;
+      });
+
+      this.redis.on("error", (err) => {
+        console.error("❌ Redis error:", err.message);
+        this.redisConnected = false;
+      });
+
+      this.redis.on("close", () => {
+        console.log("⚠️  Redis connection closed");
+        this.redisConnected = false;
       });
 
       // Initialize Bull queues with Redis connection
