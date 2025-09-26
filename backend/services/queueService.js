@@ -24,29 +24,30 @@ class QueueService {
 
     try {
       console.log('🔄 Creating Redis connection...');
-      
-      // Create Redis connection with ioredis
+
+      // Auto-detect TLS based on rediss:// scheme
+      const needsTLS = process.env.REDIS_URL.startsWith("rediss://");
+
       this.redis = new Redis(process.env.REDIS_URL, {
-        // Railway Redis configuration
-        tls: process.env.NODE_ENV === 'production' ? {} : undefined,
-        retryDelayOnFailover: 100,
-        maxRetriesPerRequest: 1,
-        lazyConnect: false,
-        connectTimeout: 5000,
-        commandTimeout: 3000,
-        family: 4, // Force IPv4
-        keepAlive: 30000
+        tls: needsTLS ? {} : undefined,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: true,
+        connectTimeout: 10000, // more lenient timeout
+        family: 4, // IPv4
+        keepAlive: 30000,
       });
 
-      // Add explicit event listeners (Railway recommended pattern)
       this.redis.on("connect", () => {
         console.log("✅ Connected to Redis");
         this.redisConnected = true;
+        this.initializeQueues();
       });
 
       this.redis.on("error", (err) => {
-        console.error("❌ Redis error:", err.message);
+        console.error("❌ Redis connection failed:", err.message);
+        console.log("⚠️  Continuing without Redis - app will work with reduced functionality");
         this.redisConnected = false;
+        this.redis = null;
       });
 
       this.redis.on("close", () => {
@@ -54,24 +55,21 @@ class QueueService {
         this.redisConnected = false;
       });
 
-      // Test connection immediately
-      this.redis.ping().then(() => {
-        console.log("✅ Redis ping successful");
-        this.redisConnected = true;
-        // Initialize Bull queues with Redis connection
-        this.initializeQueues();
-      }).catch((err) => {
-        console.error("❌ Redis ping failed:", err.message);
-        this.redisConnected = false;
-      });
-      
+      // Fallback timeout
+      setTimeout(() => {
+        if (!this.redisConnected) {
+          console.log("⚠️  Redis connection timeout - continuing without Redis");
+          this.redis = null;
+        }
+      }, 10000);
+
     } catch (error) {
       console.error('❌ Failed to initialize Redis:', error.message);
+      console.log("⚠️  Continuing without Redis - app will work with reduced functionality");
       this.redis = null;
     }
   }
 
-  // Test basic Redis connection (like your example)
   async testRedisConnection() {
     if (!this.redis) {
       console.log('⚠️  Redis not available for testing');
@@ -80,16 +78,11 @@ class QueueService {
 
     try {
       console.log('🧪 Testing basic Redis operations...');
-      
-      // Test set/get (like your example)
       await this.redis.set('test_key', 'test_value');
       const value = await this.redis.get('test_key');
       console.log('✅ Redis set/get test successful:', value);
-      
-      // Clean up
       await this.redis.del('test_key');
       console.log('✅ Redis test completed successfully');
-      
     } catch (error) {
       console.error('❌ Redis test failed:', error.message);
     }
@@ -103,33 +96,21 @@ class QueueService {
 
     try {
       console.log('🔄 Initializing Bull queues...');
+      const needsTLS = process.env.REDIS_URL.startsWith("rediss://");
 
-      // Create message queue
-      this.messageQueue = new Queue('whatsapp-messages', {
-        redis: {
-          host: this.redis.options.host,
-          port: this.redis.options.port,
-          password: this.redis.options.password,
-          tls: this.redis.options.tls
-        }
+      // Pass URL directly
+      this.messageQueue = new Queue('whatsapp-messages', process.env.REDIS_URL, {
+        redis: needsTLS ? { tls: {} } : {}
       });
 
-      // Create game queue
-      this.gameQueue = new Queue('game-timers', {
-        redis: {
-          host: this.redis.options.host,
-          port: this.redis.options.port,
-          password: this.redis.options.password,
-          tls: this.redis.options.tls
-        }
+      this.gameQueue = new Queue('game-timers', process.env.REDIS_URL, {
+        redis: needsTLS ? { tls: {} } : {}
       });
 
-      // Setup queue handlers
       this.setupQueueHandlers();
       this.setupQueueEvents();
 
       console.log('✅ Queues initialized successfully');
-
     } catch (error) {
       console.error('❌ Failed to initialize queues:', error.message);
       this.messageQueue = null;
@@ -144,8 +125,7 @@ class QueueService {
     }
 
     console.log('🔧 Setting up queue handlers...');
-    
-    // Message queue processor
+
     this.messageQueue.process('send_message', 1, async (job) => {
       try {
         console.log('📤 Processing send_message job:', job.id);
@@ -166,7 +146,6 @@ class QueueService {
       }
     });
 
-    // Game queue processor
     this.gameQueue.process('game_timer', 1, async (job) => {
       try {
         console.log('⏰ Processing game_timer job:', job.id);
@@ -189,11 +168,8 @@ class QueueService {
   }
 
   setupQueueEvents() {
-    if (!this.messageQueue || !this.gameQueue) {
-      return;
-    }
+    if (!this.messageQueue || !this.gameQueue) return;
 
-    // Message queue events
     this.messageQueue.on('completed', (job) => {
       console.log(`✅ Message job ${job.id} completed`);
     });
@@ -202,7 +178,6 @@ class QueueService {
       console.error(`❌ Message job ${job.id} failed:`, err.message);
     });
 
-    // Game queue events
     this.gameQueue.on('completed', (job) => {
       console.log(`✅ Game timer job ${job.id} completed`);
     });
@@ -212,13 +187,11 @@ class QueueService {
     });
   }
 
-  // Test Redis connection
   async testConnection() {
     if (!this.redis) {
       console.log('⚠️  Redis not initialized');
       return false;
     }
-
     try {
       const pong = await this.redis.ping();
       console.log('✅ Redis ping successful:', pong);
@@ -229,25 +202,19 @@ class QueueService {
     }
   }
 
-  // Add message to queue
   async addMessage(type, data, options = {}) {
     if (!this.messageQueue) {
       console.log('⚠️  Message queue not available, skipping message');
       return null;
     }
-
     try {
       const job = await this.messageQueue.add(type, data, {
         attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 2000
-        },
+        backoff: { type: 'exponential', delay: 2000 },
         removeOnComplete: 100,
         removeOnFail: 50,
         ...options
       });
-
       console.log(`📤 Added message job ${job.id} to queue`);
       return job;
     } catch (error) {
@@ -256,21 +223,18 @@ class QueueService {
     }
   }
 
-  // Add game timer to queue
   async addGameTimer(type, data, delay = 0) {
     if (!this.gameQueue) {
       console.log('⚠️  Game queue not available, skipping timer');
       return null;
     }
-
     try {
       const job = await this.gameQueue.add(type, data, {
-        delay: delay * 1000, // Convert seconds to milliseconds
+        delay: delay * 1000,
         attempts: 1,
         removeOnComplete: 50,
         removeOnFail: 25
       });
-
       console.log(`⏰ Added game timer job ${job.id} with ${delay}s delay`);
       return job;
     } catch (error) {
@@ -279,74 +243,35 @@ class QueueService {
     }
   }
 
-  // Process different message types
   async processMessage(data) {
     const { to, message } = data;
     const whatsappService = require('./whatsappService');
-
-    try {
-      const result = await whatsappService.sendMessage(to, message);
-      console.log('📤 Message sent successfully:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to send message:', error);
-      throw error;
-    }
+    return await whatsappService.sendMessage(to, message);
   }
 
   async processTemplate(data) {
     const { to, templateName, parameters } = data;
     const whatsappService = require('./whatsappService');
-
-    try {
-      const result = await whatsappService.sendTemplate(to, templateName, parameters);
-      console.log('📤 Template sent successfully:', result);
-      return result;
-    } catch (error) {
-      console.error('❌ Failed to send template:', error);
-      throw error;
-    }
+    return await whatsappService.sendTemplate(to, templateName, parameters);
   }
 
   async processGameTimer(data) {
     const { gameId, action } = data;
     const gameService = require('./gameService');
-
-    try {
-      switch (action) {
-        case 'start_game':
-          await gameService.startGame(gameId);
-          break;
-        case 'end_game':
-          await gameService.endGame(gameId);
-          break;
-        case 'next_question':
-          await gameService.nextQuestion(gameId);
-          break;
-        default:
-          console.log('⚠️  Unknown game timer action:', action);
-      }
-      console.log(`⏰ Game timer action '${action}' completed for game ${gameId}`);
-    } catch (error) {
-      console.error('❌ Failed to process game timer:', error);
-      throw error;
+    switch (action) {
+      case 'start_game': return await gameService.startGame(gameId);
+      case 'end_game': return await gameService.endGame(gameId);
+      case 'next_question': return await gameService.nextQuestion(gameId);
+      default: console.log('⚠️  Unknown game timer action:', action);
     }
   }
 
   async processQuestionTimer(data) {
     const { gameId, questionId } = data;
     const gameService = require('./gameService');
-
-    try {
-      await gameService.timeoutQuestion(gameId, questionId);
-      console.log(`❓ Question timer completed for game ${gameId}, question ${questionId}`);
-    } catch (error) {
-      console.error('❌ Failed to process question timer:', error);
-      throw error;
-    }
+    return await gameService.timeoutQuestion(gameId, questionId);
   }
 
-  // Get queue statistics
   async getQueueStats() {
     if (!this.messageQueue || !this.gameQueue) {
       return {
@@ -354,27 +279,22 @@ class QueueService {
         gameQueue: { available: false }
       };
     }
-
     try {
-      const messageStats = {
-        available: true,
-        waiting: await this.messageQueue.getWaiting(),
-        active: await this.messageQueue.getActive(),
-        completed: await this.messageQueue.getCompleted(),
-        failed: await this.messageQueue.getFailed()
-      };
-
-      const gameStats = {
-        available: true,
-        waiting: await this.gameQueue.getWaiting(),
-        active: await this.gameQueue.getActive(),
-        completed: await this.gameQueue.getCompleted(),
-        failed: await this.gameQueue.getFailed()
-      };
-
       return {
-        messageQueue: messageStats,
-        gameQueue: gameStats
+        messageQueue: {
+          available: true,
+          waiting: await this.messageQueue.getWaiting(),
+          active: await this.messageQueue.getActive(),
+          completed: await this.messageQueue.getCompleted(),
+          failed: await this.messageQueue.getFailed()
+        },
+        gameQueue: {
+          available: true,
+          waiting: await this.gameQueue.getWaiting(),
+          active: await this.gameQueue.getActive(),
+          completed: await this.gameQueue.getCompleted(),
+          failed: await this.gameQueue.getFailed()
+        }
       };
     } catch (error) {
       console.error('❌ Failed to get queue stats:', error.message);
@@ -385,27 +305,14 @@ class QueueService {
     }
   }
 
-  // Clean up queues
   async cleanup() {
     console.log('🧹 Cleaning up queues...');
-    
-    if (this.messageQueue) {
-      await this.messageQueue.close();
-    }
-    
-    if (this.gameQueue) {
-      await this.gameQueue.close();
-    }
-    
-    if (this.redis) {
-      await this.redis.quit();
-    }
-    
+    if (this.messageQueue) await this.messageQueue.close();
+    if (this.gameQueue) await this.gameQueue.close();
+    if (this.redis) await this.redis.quit();
     console.log('✅ Queue cleanup completed');
   }
 }
 
-// Create singleton instance
 const queueService = new QueueService();
-
 module.exports = queueService;
