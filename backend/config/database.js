@@ -9,6 +9,13 @@ const sequelize = new Sequelize(
     port: process.env.DB_PORT || 5432,
     dialect: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
+    protocol: 'postgres',
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false // for Railway or other managed DBs
+      }
+    },
     pool: {
       max: 10,
       min: 0,
@@ -23,12 +30,14 @@ const sequelize = new Sequelize(
   }
 );
 
+
 // Test database connection
 const testConnection = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
   } catch (error) {
+    console.log("Testing error database");
     console.error('❌ Unable to connect to the database:', error);
     process.exit(1);
   }
