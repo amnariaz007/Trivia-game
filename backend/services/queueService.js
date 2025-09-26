@@ -1,8 +1,9 @@
 const Queue = require('bull');
 const Redis = require('ioredis');
 
-console.log('🔧 Initializing Queue 4');
+console.log('🔧 Initializing Queue Service...');
 console.log('REDIS_URL:', process.env.REDIS_URL ? 'SET' : 'NOT SET');
+console.log('REDIS_URL value:', process.env.REDIS_URL);
 
 class QueueService {
   constructor() {
@@ -54,9 +55,36 @@ class QueueService {
       // Initialize Bull queues with Redis connection
       this.initializeQueues();
       
+      // Test basic Redis connection
+      this.testRedisConnection();
+      
     } catch (error) {
       console.error('❌ Failed to initialize Redis:', error.message);
       this.redis = null;
+    }
+  }
+
+  // Test basic Redis connection (like your example)
+  async testRedisConnection() {
+    if (!this.redis) {
+      console.log('⚠️  Redis not available for testing');
+      return;
+    }
+
+    try {
+      console.log('🧪 Testing basic Redis operations...');
+      
+      // Test set/get (like your example)
+      await this.redis.set('test_key', 'test_value');
+      const value = await this.redis.get('test_key');
+      console.log('✅ Redis set/get test successful:', value);
+      
+      // Clean up
+      await this.redis.del('test_key');
+      console.log('✅ Redis test completed successfully');
+      
+    } catch (error) {
+      console.error('❌ Redis test failed:', error.message);
     }
   }
 
