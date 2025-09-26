@@ -12,6 +12,7 @@
     "init-db": "node scripts/init-db.js",
     "init-db-production": "node scripts/init-db-production.js",
     "test-redis": "node scripts/test-redis-connection.js",
+    "test-ioredis": "node scripts/test-ioredis.js",
     "setup-test": "node scripts/test-setup.js"
   },
   "keywords": [

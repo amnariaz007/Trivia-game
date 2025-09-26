@@ -1,9 +1,8 @@
 const Queue = require('bull');
-console.log("enterbull");
 const Redis = require('ioredis');
-console.log("enterbull");
-console.log(process.env.REDIS_URL);
 
+console.log('🔧 Initializing Queue Service...');
+console.log('REDIS_URL:', process.env.REDIS_URL ? 'SET' : 'NOT SET');
 
 class QueueService {
   constructor() {
@@ -12,72 +11,101 @@ class QueueService {
     this.messageQueue = null;
     this.gameQueue = null;
 
-    // Only initialize Redis if REDIS_URL is available
-    if (process.env.REDIS_URL) {
-      this.initializeRedis();
-    } else {
-      console.log('⚠️  REDIS_URL not found, running without Redis queues');
-    }
+    // Initialize Redis connection
+    this.initializeRedis();
   }
 
   initializeRedis() {
+    if (!process.env.REDIS_URL) {
+      console.log('⚠️  REDIS_URL not found, running without Redis queues');
+      return;
+    }
+
     try {
-      // Create Redis connection with ioredis (Railway compatible)
+      console.log('🔄 Creating Redis connection...');
+      
+      // Create Redis connection with ioredis
       this.redis = new Redis(process.env.REDIS_URL, {
-        tls: process.env.NODE_ENV === 'production' ? {} : undefined, // enables SSL for Railway
+        // Railway Redis configuration
+        tls: process.env.NODE_ENV === 'production' ? {} : undefined,
         retryDelayOnFailover: 100,
         maxRetriesPerRequest: 3,
         lazyConnect: true,
         connectTimeout: 10000,
-        commandTimeout: 5000
+        commandTimeout: 5000,
+        // Connection event handlers
+        onConnect: () => {
+          console.log('✅ Redis connected successfully');
+          this.redisConnected = true;
+        },
+        onError: (error) => {
+          console.error('❌ Redis connection error:', error.message);
+          this.redisConnected = false;
+        },
+        onClose: () => {
+          console.log('⚠️  Redis connection closed');
+          this.redisConnected = false;
+        }
       });
 
-      // Initialize queues with Redis URL
-      this.messageQueue = new Queue('whatsapp-messages', {
-        redis: process.env.REDIS_URL
-      });
-
-      this.gameQueue = new Queue('game-timers', {
-        redis: process.env.REDIS_URL
-      });
-
-      this.setupQueueHandlers();
-      this.connectRedis();
+      // Initialize Bull queues with Redis connection
+      this.initializeQueues();
+      
     } catch (error) {
       console.error('❌ Failed to initialize Redis:', error.message);
       this.redis = null;
+    }
+  }
+
+  initializeQueues() {
+    if (!this.redis) {
+      console.log('⚠️  Redis not available, skipping queue initialization');
+      return;
+    }
+
+    try {
+      console.log('🔄 Initializing Bull queues...');
+
+      // Create message queue
+      this.messageQueue = new Queue('whatsapp-messages', {
+        redis: {
+          host: this.redis.options.host,
+          port: this.redis.options.port,
+          password: this.redis.options.password,
+          tls: this.redis.options.tls
+        }
+      });
+
+      // Create game queue
+      this.gameQueue = new Queue('game-timers', {
+        redis: {
+          host: this.redis.options.host,
+          port: this.redis.options.port,
+          password: this.redis.options.password,
+          tls: this.redis.options.tls
+        }
+      });
+
+      // Setup queue handlers
+      this.setupQueueHandlers();
+      this.setupQueueEvents();
+
+      console.log('✅ Queues initialized successfully');
+
+    } catch (error) {
+      console.error('❌ Failed to initialize queues:', error.message);
       this.messageQueue = null;
       this.gameQueue = null;
     }
   }
 
-  async connectRedis() {
-    if (!this.redis) {
-      console.log('⚠️  Redis not initialized, skipping connection');
-      return;
-    }
-
-    try {
-      // ioredis connects automatically, but we can test the connection
-      await this.redis.ping();
-      this.redisConnected = true;
-      console.log('✅ Redis nihsaani');
-      console.log('✅ Redis connected successfully');
-    } catch (error) {
-      console.error('❌ Redis connection failed:', error.message);
-      console.log('⚠️  Continuing without Redis - some features may not work');
-      this.redisConnected = false;
-      // Don't throw error - let the app continue without Redis
-    }
-  }
-
   setupQueueHandlers() {
-    console.log('🔧 Setting up queue handlers...');
-    
     if (!this.messageQueue || !this.gameQueue) {
       console.log('⚠️  Queues not available, skipping queue handlers setup');
       return;
     }
+
+    console.log('🔧 Setting up queue handlers...');
     
     // Message queue processor
     this.messageQueue.process('send_message', 1, async (job) => {
@@ -100,113 +128,67 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_question', 1, async (job) => {
+    // Game queue processor
+    this.gameQueue.process('game_timer', 1, async (job) => {
       try {
-        console.log('📤 Processing send_question job:', job.id);
-        return await this.processQuestion(job.data);
+        console.log('⏰ Processing game_timer job:', job.id);
+        return await this.processGameTimer(job.data);
       } catch (error) {
-        console.error('❌ Question queue processing error:', error);
+        console.error('❌ Game timer processing error:', error);
         throw error;
       }
     });
 
-    this.messageQueue.process('send_elimination', 1, async (job) => {
-      try {
-        console.log('📤 Processing send_elimination job:', job.id);
-        return await this.processElimination(job.data);
-      } catch (error) {
-        console.error('❌ Elimination queue processing error:', error);
-        throw error;
-      }
-    });
-
-    this.messageQueue.process('send_winner', 1, async (job) => {
-      try {
-        console.log('📤 Processing send_winner job:', job.id);
-        return await this.processWinner(job.data);
-      } catch (error) {
-        console.error('❌ Winner queue processing error:', error);
-        throw error;
-      }
-    });
-
-    this.messageQueue.process('send_timer_update', 1, async (job) => {
-      try {
-        console.log('📤 Processing send_timer_update job:', job.id);
-        return await this.processTimerUpdate(job.data);
-      } catch (error) {
-        console.error('❌ Timer update queue processing error:', error);
-        throw error;
-      }
-    });
-
-    this.messageQueue.process('send_game_start', 1, async (job) => {
-      try {
-        console.log('📤 Processing send_game_start job:', job.id);
-        return await this.processGameStart(job.data);
-      } catch (error) {
-        console.error('❌ Game start queue processing error:', error);
-        throw error;
-      }
-    });
-
-    this.messageQueue.process('send_game_end', 1, async (job) => {
-      try {
-        console.log('📤 Processing send_game_end job:', job.id);
-        return await this.processGameEnd(job.data);
-      } catch (error) {
-        console.error('❌ Game end queue processing error:', error);
-        throw error;
-      }
-    });
-
-    // Game timer queue processor
     this.gameQueue.process('question_timer', 1, async (job) => {
       try {
-        console.log('⏰ Processing question_timer job:', job.id);
+        console.log('❓ Processing question_timer job:', job.id);
         return await this.processQuestionTimer(job.data);
       } catch (error) {
         console.error('❌ Question timer processing error:', error);
         throw error;
       }
     });
+  }
 
-    this.gameQueue.process('game_start', 1, async (job) => {
-      try {
-        console.log('⏰ Processing game_start job:', job.id);
-        return await this.processGameStart(job.data);
-      } catch (error) {
-        console.error('❌ Game start timer processing error:', error);
-        throw error;
-      }
-    });
+  setupQueueEvents() {
+    if (!this.messageQueue || !this.gameQueue) {
+      return;
+    }
 
-    this.gameQueue.process('game_end', 1, async (job) => {
-      try {
-        console.log('⏰ Processing game_end job:', job.id);
-        return await this.processGameEnd(job.data);
-      } catch (error) {
-        console.error('❌ Game end timer processing error:', error);
-        throw error;
-      }
-    });
-
-    // Error handlers
-    this.messageQueue.on('error', (error) => {
-      console.error('❌ Message queue error:', error);
-    });
-
-    this.gameQueue.on('error', (error) => {
-      console.error('❌ Game queue error:', error);
-    });
-
+    // Message queue events
     this.messageQueue.on('completed', (job) => {
       console.log(`✅ Message job ${job.id} completed`);
     });
 
+    this.messageQueue.on('failed', (job, err) => {
+      console.error(`❌ Message job ${job.id} failed:`, err.message);
+    });
+
+    // Game queue events
     this.gameQueue.on('completed', (job) => {
       console.log(`✅ Game timer job ${job.id} completed`);
     });
+
+    this.gameQueue.on('failed', (job, err) => {
+      console.error(`❌ Game timer job ${job.id} failed:`, err.message);
+    });
+  }
+
+  // Test Redis connection
+  async testConnection() {
+    if (!this.redis) {
+      console.log('⚠️  Redis not initialized');
+      return false;
+    }
+
+    try {
+      const pong = await this.redis.ping();
+      console.log('✅ Redis ping successful:', pong);
+      return true;
+    } catch (error) {
+      console.error('❌ Redis ping failed:', error.message);
+      return false;
+    }
   }
 
   // Add message to queue
@@ -216,19 +198,24 @@ class QueueService {
       return null;
     }
 
-    const job = await this.messageQueue.add(type, data, {
-      attempts: 3,
-      backoff: {
-        type: 'exponential',
-        delay: 2000
-      },
-      removeOnComplete: 100,
-      removeOnFail: 50,
-      ...options
-    });
+    try {
+      const job = await this.messageQueue.add(type, data, {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 2000
+        },
+        removeOnComplete: 100,
+        removeOnFail: 50,
+        ...options
+      });
 
-    console.log(`📤 Added message job ${job.id} to queue`);
-    return job;
+      console.log(`📤 Added message job ${job.id} to queue`);
+      return job;
+    } catch (error) {
+      console.error('❌ Failed to add message to queue:', error.message);
+      return null;
+    }
   }
 
   // Add game timer to queue
@@ -238,176 +225,149 @@ class QueueService {
       return null;
     }
 
-    const job = await this.gameQueue.add(type, data, {
-      delay: delay * 1000, // Convert seconds to milliseconds
-      attempts: 1,
-      removeOnComplete: 50,
-      removeOnFail: 25
-    });
+    try {
+      const job = await this.gameQueue.add(type, data, {
+        delay: delay * 1000, // Convert seconds to milliseconds
+        attempts: 1,
+        removeOnComplete: 50,
+        removeOnFail: 25
+      });
 
-    console.log(`⏰ Added game timer job ${job.id} with ${delay}s delay`);
-    return job;
+      console.log(`⏰ Added game timer job ${job.id} with ${delay}s delay`);
+      return job;
+    } catch (error) {
+      console.error('❌ Failed to add game timer to queue:', error.message);
+      return null;
+    }
   }
 
   // Process different message types
   async processMessage(data) {
     const { to, message } = data;
     const whatsappService = require('./whatsappService');
-    return await whatsappService.sendTextMessage(to, message);
-  }
 
-  async processTemplate(data) {
-    const { to, templateName, language } = data;
-    const whatsappService = require('./whatsappService');
-    return await whatsappService.sendTemplateMessage(to, templateName, language);
-  }
-
-  async processQuestion(data) {
-    const { to, questionText, options, questionNumber, correctAnswer } = data;
-    const whatsappService = require('./whatsappService');
-    return await whatsappService.sendQuestion(to, questionText, options, questionNumber, correctAnswer);
-  }
-
-  async processElimination(data) {
-    const { to, correctAnswer, isCorrect } = data;
-    const whatsappService = require('./whatsappService');
-    return await whatsappService.sendEliminationMessage(to, correctAnswer, isCorrect);
-  }
-
-  async processWinner(data) {
-    const { to, winnerCount, prizePool, individualPrize } = data;
-    const whatsappService = require('./whatsappService');
-    return await whatsappService.sendWinnerAnnouncement(to, winnerCount, prizePool, individualPrize);
-  }
-
-  async processTimerUpdate(data) {
-    const { to, questionNumber, timeLeft, questionText, options, correctAnswer } = data;
-    const whatsappService = require('./whatsappService');
-    return await whatsappService.sendTimerUpdate(to, questionNumber, timeLeft, questionText, options, correctAnswer);
-  }
-
-  async processGameStart(data) {
-    const { to, gameInfo } = data;
-    const whatsappService = require('./whatsappService');
-    return await whatsappService.sendGameStartMessage(to, gameInfo);
-  }
-
-  async processGameEnd(data) {
-    const { to, gameResult } = data;
-    const whatsappService = require('./whatsappService');
-    return await whatsappService.sendGameEndMessage(to, gameResult);
-  }
-
-  // Process game timer events
-  async processQuestionTimer(data) {
-    const { gameId, questionNumber, timeLeft } = data;
-    
-    if (timeLeft <= 0) {
-      // Time's up - eliminate players who haven't answered
-      const gameService = require('./gameService');
-      await gameService.handleQuestionTimeout(gameId, questionNumber);
-    } else {
-      // Send timer update to players
-      const gameService = require('./gameService');
-      await gameService.sendTimerUpdate(gameId, questionNumber, timeLeft);
-      
-      // Schedule next timer update
-      if (timeLeft > 1) {
-        await this.addGameTimer('question_timer', {
-          gameId,
-          questionNumber,
-          timeLeft: timeLeft - 1
-        }, 1);
-      }
+    try {
+      const result = await whatsappService.sendMessage(to, message);
+      console.log('📤 Message sent successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Failed to send message:', error);
+      throw error;
     }
   }
 
-  async processGameStart(data) {
-    const { gameId } = data;
+  async processTemplate(data) {
+    const { to, templateName, parameters } = data;
+    const whatsappService = require('./whatsappService');
+
+    try {
+      const result = await whatsappService.sendTemplate(to, templateName, parameters);
+      console.log('📤 Template sent successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Failed to send template:', error);
+      throw error;
+    }
+  }
+
+  async processGameTimer(data) {
+    const { gameId, action } = data;
     const gameService = require('./gameService');
-    await gameService.startGame(gameId);
+
+    try {
+      switch (action) {
+        case 'start_game':
+          await gameService.startGame(gameId);
+          break;
+        case 'end_game':
+          await gameService.endGame(gameId);
+          break;
+        case 'next_question':
+          await gameService.nextQuestion(gameId);
+          break;
+        default:
+          console.log('⚠️  Unknown game timer action:', action);
+      }
+      console.log(`⏰ Game timer action '${action}' completed for game ${gameId}`);
+    } catch (error) {
+      console.error('❌ Failed to process game timer:', error);
+      throw error;
+    }
   }
 
-  async processGameEnd(data) {
-    const { gameId } = data;
+  async processQuestionTimer(data) {
+    const { gameId, questionId } = data;
     const gameService = require('./gameService');
-    await gameService.endGame(gameId);
+
+    try {
+      await gameService.timeoutQuestion(gameId, questionId);
+      console.log(`❓ Question timer completed for game ${gameId}, question ${questionId}`);
+    } catch (error) {
+      console.error('❌ Failed to process question timer:', error);
+      throw error;
+    }
   }
 
-  // Session management
-  async setSession(userId, data, ttl = 3600) {
-    const key = `session:${userId}`;
-    await this.redis.setEx(key, ttl, JSON.stringify(data));
-  }
-
-  async getSession(userId) {
-    const key = `session:${userId}`;
-    const data = await this.redis.get(key);
-    return data ? JSON.parse(data) : null;
-  }
-
-  async deleteSession(userId) {
-    const key = `session:${userId}`;
-    await this.redis.del(key);
-  }
-
-  // Game state management
-  async setGameState(gameId, state, ttl = 7200) {
-    const key = `game:${gameId}`;
-    await this.redis.setEx(key, ttl, JSON.stringify(state));
-  }
-
-  async getGameState(gameId) {
-    const key = `game:${gameId}`;
-    const data = await this.redis.get(key);
-    return data ? JSON.parse(data) : null;
-  }
-
-  async deleteGameState(gameId) {
-    const key = `game:${gameId}`;
-    await this.redis.del(key);
-  }
-
-  // Player state management
-  async setPlayerState(gameId, userId, state, ttl = 3600) {
-    const key = `player:${gameId}:${userId}`;
-    await this.redis.setEx(key, ttl, JSON.stringify(state));
-  }
-
-  async getPlayerState(gameId, userId) {
-    const key = `player:${gameId}:${userId}`;
-    const data = await this.redis.get(key);
-    return data ? JSON.parse(data) : null;
-  }
-
-  async deletePlayerState(gameId, userId) {
-    const key = `player:${gameId}:${userId}`;
-    await this.redis.del(key);
-  }
-
-  // Queue management
+  // Get queue statistics
   async getQueueStats() {
-    const messageStats = await this.messageQueue.getJobCounts();
-    const gameStats = await this.gameQueue.getJobCounts();
+    if (!this.messageQueue || !this.gameQueue) {
+      return {
+        messageQueue: { available: false },
+        gameQueue: { available: false }
+      };
+    }
+
+    try {
+      const messageStats = {
+        available: true,
+        waiting: await this.messageQueue.getWaiting(),
+        active: await this.messageQueue.getActive(),
+        completed: await this.messageQueue.getCompleted(),
+        failed: await this.messageQueue.getFailed()
+      };
+
+      const gameStats = {
+        available: true,
+        waiting: await this.gameQueue.getWaiting(),
+        active: await this.gameQueue.getActive(),
+        completed: await this.gameQueue.getCompleted(),
+        failed: await this.gameQueue.getFailed()
+      };
+
+      return {
+        messageQueue: messageStats,
+        gameQueue: gameStats
+      };
+    } catch (error) {
+      console.error('❌ Failed to get queue stats:', error.message);
+      return {
+        messageQueue: { available: false, error: error.message },
+        gameQueue: { available: false, error: error.message }
+      };
+    }
+  }
+
+  // Clean up queues
+  async cleanup() {
+    console.log('🧹 Cleaning up queues...');
     
-    return {
-      messageQueue: messageStats,
-      gameQueue: gameStats
-    };
-  }
-
-  async clearQueues() {
-    await this.messageQueue.empty();
-    await this.gameQueue.empty();
-    console.log('🧹 Queues cleared');
-  }
-
-  async close() {
-    await this.messageQueue.close();
-    await this.gameQueue.close();
-    await this.redis.quit();
-    console.log('🔌 Queue service closed');
+    if (this.messageQueue) {
+      await this.messageQueue.close();
+    }
+    
+    if (this.gameQueue) {
+      await this.gameQueue.close();
+    }
+    
+    if (this.redis) {
+      await this.redis.quit();
+    }
+    
+    console.log('✅ Queue cleanup completed');
   }
 }
 
-module.exports = new QueueService();
+// Create singleton instance
+const queueService = new QueueService();
+
+module.exports = queueService;
