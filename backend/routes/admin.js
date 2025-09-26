@@ -119,6 +119,12 @@ router.post('/games', async (req, res) => {
       total_questions: totalQuestions || 10,
       status: 'scheduled'
     });
+
+    // Schedule reminders for the new game
+    const notificationService = require('../services/notificationService');
+    await notificationService.scheduleGameReminders(game.id);
+    
+    console.log(`✅ Game created and reminders scheduled: ${game.id}`);
     
     res.status(201).json(game);
   } catch (error) {
@@ -204,6 +210,57 @@ router.post('/queues/clear', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Webhook monitoring - store recent webhook calls
+let webhookLogs = [];
+const MAX_WEBHOOK_LOGS = 50;
+
+// Add webhook log entry
+const addWebhookLog = (data) => {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    type: data.entry?.[0]?.changes?.[0]?.field || 'unknown',
+    from: data.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || 'system',
+    message: data.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body || 
+             data.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.title || 
+             'No message content',
+    status: data.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]?.status || 'message',
+    rawData: data
+  };
+  
+  webhookLogs.unshift(logEntry);
+  if (webhookLogs.length > MAX_WEBHOOK_LOGS) {
+    webhookLogs = webhookLogs.slice(0, MAX_WEBHOOK_LOGS);
+  }
+};
+
+// Get webhook logs
+router.get('/webhook-logs', async (req, res) => {
+  try {
+    res.json({
+      logs: webhookLogs,
+      count: webhookLogs.length,
+      maxLogs: MAX_WEBHOOK_LOGS
+    });
+  } catch (error) {
+    console.error('❌ Error getting webhook logs:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Clear webhook logs
+router.post('/webhook-logs/clear', async (req, res) => {
+  try {
+    webhookLogs = [];
+    res.json({ message: 'Webhook logs cleared successfully' });
+  } catch (error) {
+    console.error('❌ Error clearing webhook logs:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Export webhook monitoring function
+module.exports.addWebhookLog = addWebhookLog;
 
 
 
@@ -315,7 +372,7 @@ router.post('/games/:id/questions/import-csv', upload.single('csvFile'), async (
   }
 });
 
-// Start game registration
+// Start game registration (JOIN-only mode)
 router.post('/games/:id/register', async (req, res) => {
   try {
     const gameId = req.params.id;
@@ -325,38 +382,40 @@ router.post('/games/:id/register', async (req, res) => {
       return res.status(404).json({ error: 'Game not found' });
     }
     
-    // Update game status to pre_game
+    // Update game status to pre_game - users must now send "JOIN" to register
     game.status = 'pre_game';
     await game.save();
     
-    // Add all active users to the game as alive players
+    // Notify all active users that a new game is available for registration
+    const { User } = require('../models');
+    const queueService = require('../services/queueService');
+    
     const users = await User.findAll({ where: { is_active: true } });
-    let addedCount = 0;
+    const gameTime = new Date(game.start_time).toLocaleString();
     
     for (const user of users) {
-      const existingPlayer = await GamePlayer.findOne({
-        where: { game_id: gameId, user_id: user.id }
+      await queueService.addMessage('send_message', {
+        to: user.whatsapp_number,
+        message: `🎮 New QRush Trivia Game Available!
+
+⏰ Game starts at: ${gameTime}
+💰 Prize pool: $${game.prize_pool}
+
+Reply "JOIN" to register for this game!
+Only registered players will receive game notifications.`
       });
-      
-      if (!existingPlayer) {
-        await GamePlayer.create({
-          game_id: gameId,
-          user_id: user.id,
-          status: 'alive'
-        });
-        addedCount++;
-      }
     }
     
-    console.log(`✅ Added ${addedCount} users to game ${gameId}`);
+    console.log(`✅ Game ${gameId} is now accepting JOIN registrations`);
+    console.log(`📢 Notified ${users.length} users about game registration`);
     
     res.json({ 
-      message: 'Registration started', 
-      userCount: users.length,
-      addedCount: addedCount,
+      message: 'Game registration opened - users must send "JOIN" to register', 
       gameId: gameId,
       startTime: game.start_time,
-      prizePool: game.prize_pool
+      prizePool: game.prize_pool,
+      registrationMode: 'JOIN_ONLY',
+      usersNotified: users.length
     });
   } catch (error) {
     console.error('❌ Error starting registration:', error);

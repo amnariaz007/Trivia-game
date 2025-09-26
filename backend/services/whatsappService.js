@@ -79,19 +79,23 @@ class WhatsAppService {
   }
 
   // Send question with randomized answer buttons
-  async sendQuestion(to, questionText, options, questionNumber) {
+  async sendQuestion(to, questionText, options, questionNumber, correctAnswer) {
     try {
-      // Randomize options order
-      const randomizedOptions = [...options];
-      for (let i = randomizedOptions.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [randomizedOptions[i], randomizedOptions[j]] = [randomizedOptions[j], randomizedOptions[i]];
+      // Ensure correct answer is always included in the 3 buttons
+      const threeOptions = [correctAnswer];
+      const otherOptions = options.filter(opt => opt !== correctAnswer);
+      
+      // Add 2 more random options from the remaining options
+      for (let i = 0; i < 2 && otherOptions.length > 0; i++) {
+        const randomIndex = Math.floor(Math.random() * otherOptions.length);
+        threeOptions.push(otherOptions.splice(randomIndex, 1)[0]);
       }
+      
+      // Randomize the order of the 3 options
+      const randomizedOptions = threeOptions.sort(() => Math.random() - 0.5);
 
       const body = `Q${questionNumber}: ${questionText}`;
-      const buttons = randomizedOptions;
-
-      return await this.sendInteractiveMessage(to, body, buttons);
+      return await this.sendInteractiveMessage(to, body, randomizedOptions);
     } catch (error) {
       console.error('❌ Error sending question:', error);
       throw error;
@@ -234,6 +238,52 @@ Reply "PLAY" for a reminder.`;
   // Extract button response from WhatsApp webhook
   extractButtonResponse(message) {
     return message?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.title;
+  }
+
+  // Send timer update message
+  async sendTimerUpdate(to, questionNumber, timeLeft, questionText, options, correctAnswer) {
+    const timerBar = this.generateTimerBar(timeLeft);
+    
+    if (timeLeft <= 0) {
+      return await this.sendTextMessage(to, '⏰ Time\'s up! Submissions closed.');
+    }
+    
+    // Ensure correct answer is always included in the 3 buttons
+    const threeOptions = [correctAnswer];
+    const otherOptions = options.filter(opt => opt !== correctAnswer);
+    
+    // Add 2 more random options from the remaining options
+    for (let i = 0; i < 2 && otherOptions.length > 0; i++) {
+      const randomIndex = Math.floor(Math.random() * otherOptions.length);
+      threeOptions.push(otherOptions.splice(randomIndex, 1)[0]);
+    }
+    
+    // Randomize the order of the 3 options
+    const randomizedOptions = threeOptions.sort(() => Math.random() - 0.5);
+    
+    // Send timer update with interactive buttons
+    const body = `⏰ Time left: ${timerBar} ${timeLeft}s\n\nQ${questionNumber}: ${questionText}`;
+    return await this.sendInteractiveMessage(to, body, randomizedOptions);
+  }
+
+  // Send game start message
+  async sendGameStartMessage(to, gameInfo) {
+    const message = `🎮 QRush Trivia starts now!\n\n💰 Prize pool: $${gameInfo.prizePool}\n⏰ ${gameInfo.questionTimer}s per question\n\nGet ready for sudden-death elimination!`;
+    return await this.sendTextMessage(to, message);
+  }
+
+  // Send game end message
+  async sendGameEndMessage(to, gameResult) {
+    let message;
+    if (gameResult.winnerCount === 0) {
+      message = '💀 Game over - no survivors!\n\nThanks for playing QRush Trivia!';
+    } else if (gameResult.winnerCount === 1) {
+      message = `🏆 Game over - we have a winner!\n\nWinner will be contacted directly for prize delivery.\nThanks for playing QRush Trivia!`;
+    } else {
+      message = `🏆 Game over!\n\nMultiple winners this time - nice!\nWinners: ${gameResult.winnerCount}\nPrize pool: $${gameResult.prizePool}\nEach winner receives: $${gameResult.individualPrize}\n\nWinners will be DM'd directly for payout.`;
+    }
+    
+    return await this.sendTextMessage(to, message);
   }
 
   // Verify webhook

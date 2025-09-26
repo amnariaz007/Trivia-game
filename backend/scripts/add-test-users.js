@@ -6,28 +6,8 @@ async function addTestUsers() {
 
     const testUsers = [
       {
-        nickname: 'TestUser1',
-        whatsapp_number: '+12345678901',
-        is_active: true
-      },
-      {
-        nickname: 'TestUser2', 
-        whatsapp_number: '+12345678902',
-        is_active: true
-      },
-      {
-        nickname: 'TestUser3',
-        whatsapp_number: '+12345678903', 
-        is_active: true
-      },
-      {
-        nickname: 'Alice',
-        whatsapp_number: '+12345678904',
-        is_active: true
-      },
-      {
-        nickname: 'Bob',
-        whatsapp_number: '+12345678905',
+        nickname: 'TestUser',
+        whatsapp_number: '923196612416', // 03196612416
         is_active: true
       }
     ];

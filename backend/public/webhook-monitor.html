@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook Monitor - QRush Trivia</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .webhook-log {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background: #f9f9f9;
+            border-left: 4px solid #667eea;
+        }
+        .webhook-log.status {
+            border-left-color: #27ae60;
+        }
+        .webhook-log.message {
+            border-left-color: #3498db;
+        }
+        .webhook-log.unknown {
+            border-left-color: #f39c12;
+        }
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .log-timestamp {
+            font-size: 0.9em;
+            color: #666;
+        }
+        .log-type {
+            background: #667eea;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+        }
+        .log-from {
+            font-weight: bold;
+            color: #333;
+        }
+        .log-message {
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 3px;
+            border: 1px solid #eee;
+        }
+        .log-raw {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f8f8;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.8em;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+        .toggle-raw {
+            background: #95a5a6;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.8em;
+        }
+        .toggle-raw:hover {
+            background: #7f8c8d;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #5a6fd8;
+        }
+        .btn-danger {
+            background: #e74c3c;
+        }
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-online {
+            background: #27ae60;
+        }
+        .status-offline {
+            background: #e74c3c;
+        }
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .auto-refresh input[type="checkbox"] {
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📡 Webhook Monitor - QRush Trivia</h1>
+        <p>Real-time monitoring of WhatsApp webhook calls</p>
+        <div>
+            <span class="status-indicator status-online" id="statusIndicator"></span>
+            <span id="statusText">Connected</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>🎛️ Controls</h2>
+        <div class="controls">
+            <button onclick="refreshLogs()">🔄 Refresh</button>
+            <button onclick="clearLogs()" class="btn-danger">🗑️ Clear Logs</button>
+            <div class="auto-refresh">
+                <input type="checkbox" id="autoRefresh" checked>
+                <label for="autoRefresh">Auto-refresh (5s)</label>
+            </div>
+        </div>
+        <div>
+            <strong>Webhook URL:</strong> <code>https://nonmystically-uncertificated-remona.ngrok-free.dev/webhook</code>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📋 Webhook Logs (<span id="logCount">0</span>)</h2>
+        <div id="webhookLogs">
+            <p>No webhook calls received yet. Send a test message or wait for WhatsApp to call your webhook.</p>
+        </div>
+    </div>
+
+    <script>
+        let autoRefreshInterval;
+        const API_BASE = '/admin';
+        const AUTH_HEADERS = {
+            'Content-Type': 'application/json',
+            'username': 'admin',
+            'password': 'your_admin_password' // Change this to match your env
+        };
+
+        // Load webhook logs
+        async function loadWebhookLogs() {
+            try {
+                const response = await fetch(`${API_BASE}/webhook-logs`, {
+                    headers: AUTH_HEADERS
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    displayWebhookLogs(data.logs);
+                    document.getElementById('logCount').textContent = data.count;
+                    document.getElementById('statusIndicator').className = 'status-indicator status-online';
+                    document.getElementById('statusText').textContent = 'Connected';
+                } else {
+                    throw new Error('Failed to fetch logs');
+                }
+            } catch (error) {
+                console.error('Error loading webhook logs:', error);
+                document.getElementById('statusIndicator').className = 'status-indicator status-offline';
+                document.getElementById('statusText').textContent = 'Disconnected';
+            }
+        }
+
+        // Display webhook logs
+        function displayWebhookLogs(logs) {
+            const container = document.getElementById('webhookLogs');
+            
+            if (logs.length === 0) {
+                container.innerHTML = '<p>No webhook calls received yet. Send a test message or wait for WhatsApp to call your webhook.</p>';
+                return;
+            }
+
+            container.innerHTML = logs.map(log => `
+                <div class="webhook-log ${log.status}">
+                    <div class="log-header">
+                        <div>
+                            <span class="log-type">${log.type}</span>
+                            <span class="log-from">From: ${log.from}</span>
+                        </div>
+                        <div class="log-timestamp">${new Date(log.timestamp).toLocaleString()}</div>
+                    </div>
+                    <div class="log-message">
+                        <strong>Message:</strong> ${log.message}
+                    </div>
+                    <button class="toggle-raw" onclick="toggleRawData(this)">Show Raw Data</button>
+                    <div class="log-raw">${JSON.stringify(log.rawData, null, 2)}</div>
+                </div>
+            `).join('');
+        }
+
+        // Toggle raw data display
+        function toggleRawData(button) {
+            const rawData = button.nextElementSibling;
+            if (rawData.style.display === 'none' || rawData.style.display === '') {
+                rawData.style.display = 'block';
+                button.textContent = 'Hide Raw Data';
+            } else {
+                rawData.style.display = 'none';
+                button.textContent = 'Show Raw Data';
+            }
+        }
+
+        // Refresh logs
+        function refreshLogs() {
+            loadWebhookLogs();
+        }
+
+        // Clear logs
+        async function clearLogs() {
+            if (confirm('Are you sure you want to clear all webhook logs?')) {
+                try {
+                    const response = await fetch(`${API_BASE}/webhook-logs/clear`, {
+                        method: 'POST',
+                        headers: AUTH_HEADERS
+                    });
+                    
+                    if (response.ok) {
+                        loadWebhookLogs();
+                    } else {
+                        alert('Error clearing logs');
+                    }
+                } catch (error) {
+                    console.error('Error clearing logs:', error);
+                    alert('Error clearing logs');
+                }
+            }
+        }
+
+        // Auto-refresh functionality
+        function setupAutoRefresh() {
+            const checkbox = document.getElementById('autoRefresh');
+            
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(loadWebhookLogs, 5000);
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('autoRefresh').addEventListener('change', setupAutoRefresh);
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadWebhookLogs();
+            setupAutoRefresh();
+        });
+    </script>
+</body>
+</html>

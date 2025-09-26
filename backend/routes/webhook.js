@@ -6,6 +6,26 @@ const whatsappService = require('../services/whatsappService');
 const queueService = require('../services/queueService');
 const { User, Game, GamePlayer } = require('../models');
 
+// Normalize phone number to E.164 format
+function normalizePhoneNumber(phoneNumber) {
+  if (!phoneNumber) return phoneNumber;
+  
+  // Remove any non-digit characters
+  let cleaned = phoneNumber.replace(/\D/g, '');
+  
+  // Handle Pakistani numbers (starting with 0)
+  if (cleaned.startsWith('0')) {
+    cleaned = '92' + cleaned.substring(1);
+  }
+  
+  // Handle Pakistani numbers without country code
+  if (cleaned.length === 10 && cleaned.startsWith('3')) {
+    cleaned = '92' + cleaned;
+  }
+  
+  return cleaned;
+}
+
 // Webhook verification
 router.get('/', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
@@ -25,6 +45,16 @@ router.post('/', async (req, res) => {
     console.log('📥 Received webhook at:', new Date().toISOString());
     console.log('📥 Webhook body:', JSON.stringify(req.body, null, 2));
     console.log('📥 Webhook headers:', JSON.stringify(req.headers, null, 2));
+    
+    // Log webhook to monitoring system
+    try {
+      const adminModule = require('./admin');
+      if (adminModule.addWebhookLog) {
+        adminModule.addWebhookLog(req.body);
+      }
+    } catch (error) {
+      console.error('❌ Error logging webhook:', error);
+    }
     
     // Validate webhook structure
     const webhookSchema = Joi.object({
@@ -47,13 +77,17 @@ router.post('/', async (req, res) => {
                     }).required(),
                     wa_id: Joi.string().required()
                   })
-                ).required(),
+                ).optional(),
                 messages: Joi.array().items(
                   Joi.object({
                     from: Joi.string().required(),
                     id: Joi.string().required(),
                     timestamp: Joi.string().required(),
                     type: Joi.string().valid('text', 'interactive').required(),
+                    context: Joi.object({
+                      from: Joi.string().required(),
+                      id: Joi.string().required()
+                    }).optional(),
                     text: Joi.object({
                       body: Joi.string().required()
                     }).when('type', {
@@ -73,9 +107,41 @@ router.post('/', async (req, res) => {
                       otherwise: Joi.forbidden()
                     })
                   })
-                ).required()
+                ).optional(),
+                statuses: Joi.array().items(
+                  Joi.object({
+                    id: Joi.string().required(),
+                    status: Joi.string().valid('sent', 'delivered', 'read', 'failed').required(),
+                    timestamp: Joi.string().required(),
+                    recipient_id: Joi.string().required(),
+                    conversation: Joi.object({
+                      id: Joi.string().required(),
+                      expiration_timestamp: Joi.string().optional(),
+                      origin: Joi.object({
+                        type: Joi.string().required()
+                      }).required()
+                    }).optional(),
+                    pricing: Joi.object({
+                      billable: Joi.boolean().required(),
+                      pricing_model: Joi.string().required(),
+                      category: Joi.string().required(),
+                      type: Joi.string().required()
+                    }).optional(),
+                    errors: Joi.array().items(
+                      Joi.object({
+                        code: Joi.number().required(),
+                        title: Joi.string().required(),
+                        message: Joi.string().required(),
+                        error_data: Joi.object({
+                          details: Joi.string().required()
+                        }).optional(),
+                        href: Joi.string().optional()
+                      })
+                    ).optional()
+                  })
+                ).optional()
               }).required(),
-              field: Joi.string().valid('messages').required()
+              field: Joi.string().valid('messages', 'message_statuses').required()
             })
           ).required()
         })
@@ -94,8 +160,22 @@ router.post('/', async (req, res) => {
         if (change.field === 'messages') {
           const value = change.value;
           
-          for (const message of value.messages) {
-            await processMessage(message, value.contacts[0]);
+          // Handle messages
+          if (value.messages && Array.isArray(value.messages)) {
+            console.log('📨 Processing messages:', value.messages.length);
+            for (const message of value.messages) {
+              console.log('📨 Message type:', message.type);
+              console.log('📨 Message content:', JSON.stringify(message, null, 2));
+              await processMessage(message, value.contacts?.[0]);
+            }
+          }
+          
+          // Handle status updates (message read/delivered status)
+          if (value.statuses && Array.isArray(value.statuses)) {
+            console.log('📊 Message status update received:', value.statuses);
+            for (const status of value.statuses) {
+              await handleMessageStatus(status);
+            }
           }
         }
       }
@@ -114,11 +194,16 @@ async function processMessage(message, contact) {
     console.log('🔍 Processing message:', JSON.stringify(message, null, 2));
     console.log('🔍 Contact info:', JSON.stringify(contact, null, 2));
     
-    const phoneNumber = message.from;
-    const messageText = message.text?.body || message.interactive?.button_reply?.title || '';
+    // Use wa_id from contact info (E.164 format) and normalize it
+    const phoneNumber = normalizePhoneNumber(contact?.wa_id || message.from);
+    const messageText = message.text?.body || '';
     const buttonResponse = message.interactive?.button_reply?.title || '';
+    const finalMessage = messageText || buttonResponse;
 
-    console.log(`📱 Processing message from ${phoneNumber}: ${messageText || buttonResponse}`);
+    console.log(`📱 Processing message from ${phoneNumber}:`);
+    console.log(`📱 Text: "${messageText}"`);
+    console.log(`📱 Button: "${buttonResponse}"`);
+    console.log(`📱 Final: "${finalMessage}"`);
 
     // Get or create user
     let user = await User.findByWhatsAppNumber(phoneNumber);
@@ -130,7 +215,7 @@ async function processMessage(message, contact) {
     }
 
     // Existing user - handle their message
-    await handleExistingUser(user, messageText || buttonResponse, buttonResponse);
+    await handleExistingUser(user, messageText || buttonResponse, buttonResponse, phoneNumber);
     
   } catch (error) {
     console.error('❌ Error processing message:', error);
@@ -142,39 +227,38 @@ async function handleNewUser(phoneNumber, messageText, contact) {
   try {
     console.log('🆕 Creating new user for phone number:', phoneNumber);
     
-    // Create user with temporary nickname and incomplete registration
+    // Use WhatsApp display name if available, otherwise use phone number
+    const displayName = contact?.profile?.name || `Player_${phoneNumber.slice(-4)}`;
+    
+    // Create user with WhatsApp display name and complete registration
     const user = await User.create({
-      whatsapp_number: phoneNumber,
-      nickname: `Player_${phoneNumber.slice(-4)}`, // Temporary nickname
-      registration_completed: false // Registration not complete until nickname is set
+      whatsapp_number: phoneNumber, // This is already normalized
+      nickname: displayName,
+      registration_completed: true // Registration complete with WhatsApp name
     });
     
-    console.log('✅ User created:', user.id);
+    console.log('✅ User created:', user.id, 'with nickname:', displayName);
 
-    // Start registration session
-    console.log('📝 Setting up nickname session for user:', user.id);
-    await queueService.setSession(user.id, {
-      state: 'awaiting_nickname',
-      timestamp: new Date()
-    });
-    console.log('✅ Session created');
-
-    // Send welcome template message asking for nickname
-    console.log('📤 Sending welcome template to:', phoneNumber);
+    // Send welcome message
+    const nextGameTime = await getNextGameTime();
+    const prizePool = process.env.DEFAULT_PRIZE_POOL || 100;
     
+    // Send welcome message via queue system (same as existing users)
     try {
-      const whatsappService = require('../services/whatsappService');
-      await whatsappService.sendTemplateMessage(phoneNumber, 'welcome', 'en_US');
-      console.log('✅ Welcome template sent successfully');
-    } catch (error) {
-      console.error('❌ Error sending template:', error);
-      // Fallback to queue
-      await queueService.addMessage('send_template', {
-        to: phoneNumber,
-        templateName: 'welcome',
-        language: 'en_US'
+      await queueService.addMessage('send_message', {
+        to: phoneNumber, // Use normalized phone number
+        message: `🎉 Welcome to QRush Trivia, ${displayName}!
+
+It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
+
+💰 Today's prize pool: $${prizePool}
+⏰ Next game: ${nextGameTime}
+
+Reply "PLAY" to get a reminder when we start!`
       });
-      console.log('✅ Welcome template queued as fallback');
+      console.log('✅ Welcome message queued for new user');
+    } catch (error) {
+      console.error('❌ Error queuing welcome message:', error);
     }
 
   } catch (error) {
@@ -183,64 +267,79 @@ async function handleNewUser(phoneNumber, messageText, contact) {
 }
 
 // Handle existing user messages
-async function handleExistingUser(user, messageText, buttonResponse) {
+async function handleExistingUser(user, messageText, buttonResponse, wa_id) {
   try {
-    // Check if user is in registration flow
+    // Check if user is in registration flow (legacy - no longer used)
     const session = await queueService.getSession(user.id);
     
     if (session && session.state === 'awaiting_nickname') {
-      await handleNicknameRegistration(user, messageText);
-      return;
+      // Clear the session and continue with normal flow
+      await queueService.deleteSession(user.id);
     }
 
     // Check if registration is not completed
     if (!user.registration_completed) {
-      // User exists but registration is incomplete, restart nickname flow
-      await queueService.setSession(user.id, {
-        state: 'awaiting_nickname',
-        timestamp: new Date()
-      });
+      // User exists but registration is incomplete, complete it with default name
+      user.registration_completed = true;
+      await user.save();
       
-      // Send welcome template message asking for nickname
+      // Send welcome message
+      const nextGameTime = await getNextGameTime();
+      const prizePool = process.env.DEFAULT_PRIZE_POOL || 100;
+      
+      // Send welcome message via queue system
       try {
-        const whatsappService = require('../services/whatsappService');
-        await whatsappService.sendTemplateMessage(user.whatsapp_number, 'welcome', 'en_US');
-        console.log('✅ Welcome template sent successfully to existing user');
-      } catch (error) {
-        console.error('❌ Error sending template:', error);
-        // Fallback to queue
-        await queueService.addMessage('send_template', {
-          to: user.whatsapp_number,
-          templateName: 'welcome',
-          language: 'en_US'
+        await queueService.addMessage('send_message', {
+          to: user.whatsapp_number, // Use stored phone number
+          message: `🎉 Welcome to QRush Trivia, ${user.nickname}!
+
+It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
+
+💰 Today's prize pool: $${prizePool}
+⏰ Next game: ${nextGameTime}
+
+Reply "PLAY" to get a reminder when we start!`
         });
-        console.log('✅ Welcome template queued as fallback');
+        console.log('✅ Welcome message queued for existing user');
+      } catch (error) {
+        console.error('❌ Error queuing welcome message:', error);
       }
       return;
     }
 
     // Check if this is a new user's first message (they might have been created but not completed registration)
     if (user.nickname === `Player_${user.whatsapp_number.slice(-4)}`) {
-      // This is a new user with default nickname, ask for nickname
-      await queueService.setSession(user.id, {
-        state: 'awaiting_nickname',
-        timestamp: new Date()
-      });
+      // This is a user with default nickname - check if they're sending a command
+      const command = (messageText || buttonResponse || '').toUpperCase().trim();
       
-      try {
-        const whatsappService = require('../services/whatsappService');
-        await whatsappService.sendTemplateMessage(user.whatsapp_number, 'welcome', 'en_US');
-        console.log('✅ Welcome template sent to new user with default nickname');
-      } catch (error) {
-        console.error('❌ Error sending template:', error);
-        await queueService.addMessage('send_template', {
-          to: user.whatsapp_number,
-          templateName: 'welcome',
-          language: 'en_US'
-        });
-        console.log('✅ Welcome template queued as fallback');
+      if (command && ['PLAY', 'JOIN', 'HELP', 'NICKNAME'].includes(command)) {
+        // User is sending a command, process it normally
+        console.log(`📱 User with default nickname sending command: ${command}`);
+        // Continue to command processing below
+      } else {
+        // This is a new user with default nickname, send welcome message
+        const nextGameTime = await getNextGameTime();
+        const prizePool = process.env.DEFAULT_PRIZE_POOL || 100;
+        
+        // Send welcome message via queue system
+        try {
+          await queueService.addMessage('send_message', {
+            to: user.whatsapp_number, // Use stored phone number
+            message: `🎉 Welcome to QRush Trivia, ${user.nickname}!
+
+It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
+
+💰 Today's prize pool: $${prizePool}
+⏰ Next game: ${nextGameTime}
+
+Reply "PLAY" to get a reminder when we start!`
+          });
+          console.log('✅ Welcome message queued for new user with default nickname');
+        } catch (error) {
+          console.error('❌ Error queuing welcome message:', error);
+        }
+        return;
       }
-      return;
     }
 
     // Handle regular game commands
@@ -248,13 +347,13 @@ async function handleExistingUser(user, messageText, buttonResponse) {
     
     switch (command) {
       case 'PLAY':
-        await handlePlayCommand(user);
+        await handlePlayCommand(user, wa_id);
         break;
       case 'JOIN':
         await handleJoinCommand(user);
         break;
       case 'HELP':
-        await handleHelpCommand(user);
+        await handleHelpCommand(user, wa_id);
         break;
       case 'NICKNAME':
         await handleNicknameChange(user, messageText);
@@ -269,38 +368,33 @@ async function handleExistingUser(user, messageText, buttonResponse) {
   }
 }
 
-// Handle nickname registration
+// Handle nickname registration (legacy - no longer used)
 async function handleNicknameRegistration(user, nickname) {
   try {
-    if (!nickname || nickname.length < 2 || nickname.length > 50) {
-      await queueService.addMessage('send_message', {
-        to: user.whatsapp_number,
-        message: 'Please provide a nickname between 2-50 characters.'
-      });
-      return;
-    }
-
-    // Update user nickname
-    user.nickname = nickname;
-    user.registration_completed = true;
-    await user.save();
-
-    // Clear registration session
+    // Clear registration session and continue with normal flow
     await queueService.deleteSession(user.id);
-
-    // Send confirmation
+    
+    // Send welcome message
     const nextGameTime = await getNextGameTime();
     const prizePool = process.env.DEFAULT_PRIZE_POOL || 100;
     
-    await queueService.addMessage('send_message', {
-      to: user.whatsapp_number,
-      message: `✅ Welcome, ${nickname}! You're all set for QRush Trivia!
+    // Send welcome message via queue system
+    try {
+      await queueService.addMessage('send_message', {
+        to: user.whatsapp_number, // Use stored phone number
+        message: `🎉 Welcome to QRush Trivia, ${user.nickname}!
+
+It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
 
 💰 Today's prize pool: $${prizePool}
 ⏰ Next game: ${nextGameTime}
 
-Reply "PLAY" to get a reminder!`
-    });
+Reply "PLAY" to get a reminder when we start!`
+      });
+      console.log('✅ Welcome message queued from legacy function');
+    } catch (error) {
+      console.error('❌ Error queuing welcome message:', error);
+    }
 
   } catch (error) {
     console.error('❌ Error handling nickname registration:', error);
@@ -308,7 +402,7 @@ Reply "PLAY" to get a reminder!`
 }
 
 // Handle PLAY command
-async function handlePlayCommand(user) {
+async function handlePlayCommand(user, wa_id) {
   try {
     const activeGame = await Game.getActiveGame();
     
@@ -318,7 +412,7 @@ async function handlePlayCommand(user) {
       const prizePool = process.env.DEFAULT_PRIZE_POOL || 100;
       
       await queueService.addMessage('send_message', {
-        to: user.whatsapp_number,
+        to: wa_id, // Use wa_id from webhook instead of stored phone number
         message: `📱 There's no game running right now.
 
 ⏰ Next QRush Trivia: ${nextGameTime}
@@ -334,7 +428,7 @@ Reply "PLAY" for a reminder.`
       const nextGameTime = await getNextGameTime();
       
       await queueService.addMessage('send_message', {
-        to: user.whatsapp_number,
+        to: wa_id, // Use wa_id from webhook instead of stored phone number
         message: `🚫 The game is in progress and you can't join mid-round.
 
 ⏰ Next game: ${nextGameTime}
@@ -349,7 +443,7 @@ Reply "PLAY" to get a reminder before we start.`
     const prizePool = activeGame.prize_pool;
     
     await queueService.addMessage('send_message', {
-      to: user.whatsapp_number,
+      to: wa_id, // Use wa_id from webhook instead of stored phone number
       message: `🎮 QRush Trivia starts soon!
 
 ⏰ Game begins at ${gameTime}
@@ -425,13 +519,13 @@ We'll send you a reminder 5 minutes before the game starts!`
 }
 
 // Handle HELP command
-async function handleHelpCommand(user) {
+async function handleHelpCommand(user, wa_id) {
   try {
     const nextGameTime = await getNextGameTime();
     const prizePool = process.env.DEFAULT_PRIZE_POOL || 100;
     
     await queueService.addMessage('send_message', {
-      to: user.whatsapp_number,
+      to: wa_id, // Use wa_id from webhook instead of stored phone number
       message: `❓ How QRush Trivia Works:
 
 • Sudden-death: get every question right to stay in.
@@ -459,12 +553,15 @@ Reply "PLAY" for a reminder.`
 // Handle game answer
 async function handleGameAnswer(user, answer) {
   try {
+    console.log(`🎯 Handling game answer from ${user.whatsapp_number}: ${answer}`);
     const gameService = require('../services/gameService');
     
     // Check if user is in an active game
     const activeGame = await gameService.getActiveGameForPlayer(user.whatsapp_number);
+    console.log(`🔍 Active game found:`, activeGame ? 'YES' : 'NO');
     
     if (!activeGame) {
+      console.log(`❌ No active game found for player ${user.whatsapp_number}`);
       await queueService.addMessage('send_message', {
         to: user.whatsapp_number,
         message: '❓ I didn\'t get that. Use the answer buttons to play.'
@@ -472,6 +569,7 @@ async function handleGameAnswer(user, answer) {
       return;
     }
 
+    console.log(`✅ Processing answer "${answer}" for game ${activeGame.gameId}`);
     // Handle the answer
     await gameService.handlePlayerAnswer(activeGame.gameId, user.whatsapp_number, answer);
 
@@ -481,6 +579,114 @@ async function handleGameAnswer(user, answer) {
       to: user.whatsapp_number,
       message: '❌ Something went wrong. Please try again.'
     });
+  }
+}
+
+// Handle message status updates
+async function handleMessageStatus(status) {
+  try {
+    console.log(`📊 Processing message status: ${status.status} for ${status.recipient_id}`);
+    
+    if (status.status === 'failed' && status.errors) {
+      for (const error of status.errors) {
+        console.log(`❌ Message failed with error:`, error);
+        
+        // Handle 24-hour window restriction (error code 131047)
+        if (error.code === 131047) {
+          console.log(`⏰ 24-hour window expired for ${status.recipient_id}`);
+          await handle24HourWindowExpired(status.recipient_id);
+        }
+        // Handle other message failures
+        else {
+          console.log(`❌ Message failed for ${status.recipient_id}: ${error.message}`);
+          await handleMessageFailure(status.recipient_id, error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error handling message status:', error);
+  }
+}
+
+// Handle 24-hour window expiration
+async function handle24HourWindowExpired(phoneNumber) {
+  try {
+    console.log(`⏰ Handling 24-hour window expiration for ${phoneNumber}`);
+    
+    // Get user
+    const user = await User.findByWhatsAppNumber(phoneNumber);
+    if (!user) {
+      console.log(`❌ User not found for ${phoneNumber}`);
+      return;
+    }
+    
+    // Check if user is in an active game
+    const gameService = require('../services/gameService');
+    const activeGame = await gameService.getActiveGameForPlayer(phoneNumber);
+    
+    if (activeGame) {
+      console.log(`🎮 User ${phoneNumber} is in active game ${activeGame.gameId}, handling 24h window expiration`);
+      
+      // Mark user as eliminated due to 24-hour window
+      await gameService.handlePlayerElimination(activeGame.gameId, phoneNumber, '24h_window_expired');
+      
+      // Send re-engagement message when possible
+      await sendReEngagementMessage(phoneNumber);
+    } else {
+      console.log(`📱 User ${phoneNumber} not in active game, sending re-engagement message`);
+      await sendReEngagementMessage(phoneNumber);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error handling 24-hour window expiration:', error);
+  }
+}
+
+// Handle general message failures
+async function handleMessageFailure(phoneNumber, error) {
+  try {
+    console.log(`❌ Handling message failure for ${phoneNumber}:`, error);
+    
+    // Log the failure for monitoring
+    console.log(`📊 Message failure logged for ${phoneNumber} - Code: ${error.code}, Message: ${error.message}`);
+    
+    // For now, just log. In the future, you might want to implement retry logic
+    // or notify administrators about message delivery issues
+    
+  } catch (error) {
+    console.error('❌ Error handling message failure:', error);
+  }
+}
+
+// Send re-engagement message
+async function sendReEngagementMessage(phoneNumber) {
+  try {
+    console.log(`📱 Sending re-engagement message to ${phoneNumber}`);
+    
+    // Use WhatsApp Business API to send a template message
+    // This requires a pre-approved template for re-engagement
+    const whatsappService = require('../services/whatsappService');
+    
+    // For now, we'll use a simple message since we don't have a pre-approved template
+    // In production, you should use a pre-approved template message
+    const message = `Hi! It's been a while since we last chatted. 
+
+🎮 QRush Trivia is back with exciting games!
+
+Reply with "PLAY" to join our next trivia game and win cash prizes! 💰
+
+We'll send you a reminder when the next game starts.`;
+
+    // Note: This will fail due to 24-hour window, but it's good to have the logic ready
+    // In production, you need to use a pre-approved template message
+    console.log(`📱 Attempting to send re-engagement message to ${phoneNumber}`);
+    console.log(`📱 Message: ${message}`);
+    
+    // TODO: Implement template message sending when you have a pre-approved template
+    // await whatsappService.sendTemplateMessage(phoneNumber, 're_engagement_template', {});
+    
+  } catch (error) {
+    console.error('❌ Error sending re-engagement message:', error);
   }
 }
 

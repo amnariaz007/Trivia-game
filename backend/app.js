@@ -14,6 +14,7 @@ require('./models'); // Initialize models
 
 // Import and initialize queue service
 const queueService = require('./services/queueService');
+const gameService = require('./services/gameService');
 
 // Initialize queue service to ensure process handlers are set up
 console.log('🔄 Initializing queue service...');
@@ -93,6 +94,9 @@ async function initializeApp() {
       console.error('❌ WhatsApp configuration validation failed');
       process.exit(1);
     }
+    
+    // Restore active games from database
+    await gameService.restoreActiveGames();
     
     // Start server
     app.listen(PORT, () => {

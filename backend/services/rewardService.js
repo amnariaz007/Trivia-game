@@ -1,5 +1,5 @@
 const { Game, GamePlayer, User } = require('../models');
-const { queueService } = require('./queueService');
+const queueService = require('./queueService');
 
 class RewardService {
   constructor() {

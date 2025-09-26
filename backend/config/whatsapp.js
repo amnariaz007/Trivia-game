@@ -1,11 +1,13 @@
 const axios = require('axios');
+require('dotenv').config();
 
 const whatsappConfig = {
+  accessToken: process.env.WHATSAPP_ACCESS_TOKEN,
   token: process.env.WHATSAPP_ACCESS_TOKEN,
   phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
   verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
-  apiVersion: process.env.WHATSAPP_API_VERSION || 'v17.0',
-  baseUrl: `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION || 'v17.0'}`,
+  apiVersion: process.env.WHATSAPP_API_VERSION || 'v18.0',
+  baseUrl: `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION || 'v18.0'}`,
   
   // API endpoints
   endpoints: {
@@ -45,7 +47,7 @@ const whatsappConfig = {
   
   // HTTP client configuration
   client: axios.create({
-    baseURL: `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION || 'v17.0'}`,
+    baseURL: `https://graph.facebook.com/${process.env.WHATSAPP_API_VERSION || 'v18.0'}`,
     timeout: 10000,
     headers: {
       'Authorization': `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
@@ -66,6 +68,7 @@ const validateConfig = () => {
   }
   
   console.log('✅ WhatsApp configuration validated');
+  console.log('🔑 Token:', process.env.WHATSAPP_ACCESS_TOKEN ? 'Present' : 'Missing');
   return true;
 };
 

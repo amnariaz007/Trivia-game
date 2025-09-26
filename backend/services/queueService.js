@@ -35,48 +35,116 @@ class QueueService {
   }
 
   setupQueueHandlers() {
+    console.log('🔧 Setting up queue handlers...');
+    
     // Message queue processor
-    this.messageQueue.process(async (job) => {
+    this.messageQueue.process('send_message', 1, async (job) => {
       try {
-        const { type, data } = job.data;
-        
-        switch (type) {
-          case 'send_message':
-            return await this.processMessage(data);
-          case 'send_template':
-            return await this.processTemplate(data);
-          case 'send_question':
-            return await this.processQuestion(data);
-          case 'send_elimination':
-            return await this.processElimination(data);
-          case 'send_winner':
-            return await this.processWinner(data);
-          default:
-            throw new Error(`Unknown message type: ${type}`);
-        }
+        console.log('📤 Processing send_message job:', job.id);
+        return await this.processMessage(job.data);
       } catch (error) {
         console.error('❌ Message queue processing error:', error);
         throw error;
       }
     });
 
-    // Game timer queue processor
-    this.gameQueue.process(async (job) => {
+    this.messageQueue.process('send_template', 1, async (job) => {
       try {
-        const { type, data } = job.data;
-        
-        switch (type) {
-          case 'question_timer':
-            return await this.processQuestionTimer(data);
-          case 'game_start':
-            return await this.processGameStart(data);
-          case 'game_end':
-            return await this.processGameEnd(data);
-          default:
-            throw new Error(`Unknown timer type: ${type}`);
-        }
+        console.log('📤 Processing send_template job:', job.id);
+        return await this.processTemplate(job.data);
       } catch (error) {
-        console.error('❌ Game timer processing error:', error);
+        console.error('❌ Template queue processing error:', error);
+        throw error;
+      }
+    });
+
+    this.messageQueue.process('send_question', 1, async (job) => {
+      try {
+        console.log('📤 Processing send_question job:', job.id);
+        return await this.processQuestion(job.data);
+      } catch (error) {
+        console.error('❌ Question queue processing error:', error);
+        throw error;
+      }
+    });
+
+    this.messageQueue.process('send_elimination', 1, async (job) => {
+      try {
+        console.log('📤 Processing send_elimination job:', job.id);
+        return await this.processElimination(job.data);
+      } catch (error) {
+        console.error('❌ Elimination queue processing error:', error);
+        throw error;
+      }
+    });
+
+    this.messageQueue.process('send_winner', 1, async (job) => {
+      try {
+        console.log('📤 Processing send_winner job:', job.id);
+        return await this.processWinner(job.data);
+      } catch (error) {
+        console.error('❌ Winner queue processing error:', error);
+        throw error;
+      }
+    });
+
+    this.messageQueue.process('send_timer_update', 1, async (job) => {
+      try {
+        console.log('📤 Processing send_timer_update job:', job.id);
+        return await this.processTimerUpdate(job.data);
+      } catch (error) {
+        console.error('❌ Timer update queue processing error:', error);
+        throw error;
+      }
+    });
+
+    this.messageQueue.process('send_game_start', 1, async (job) => {
+      try {
+        console.log('📤 Processing send_game_start job:', job.id);
+        return await this.processGameStart(job.data);
+      } catch (error) {
+        console.error('❌ Game start queue processing error:', error);
+        throw error;
+      }
+    });
+
+    this.messageQueue.process('send_game_end', 1, async (job) => {
+      try {
+        console.log('📤 Processing send_game_end job:', job.id);
+        return await this.processGameEnd(job.data);
+      } catch (error) {
+        console.error('❌ Game end queue processing error:', error);
+        throw error;
+      }
+    });
+
+    // Game timer queue processor
+    this.gameQueue.process('question_timer', 1, async (job) => {
+      try {
+        console.log('⏰ Processing question_timer job:', job.id);
+        return await this.processQuestionTimer(job.data);
+      } catch (error) {
+        console.error('❌ Question timer processing error:', error);
+        throw error;
+      }
+    });
+
+    this.gameQueue.process('game_start', 1, async (job) => {
+      try {
+        console.log('⏰ Processing game_start job:', job.id);
+        return await this.processGameStart(job.data);
+      } catch (error) {
+        console.error('❌ Game start timer processing error:', error);
+        throw error;
+      }
+    });
+
+    this.gameQueue.process('game_end', 1, async (job) => {
+      try {
+        console.log('⏰ Processing game_end job:', job.id);
+        return await this.processGameEnd(job.data);
+      } catch (error) {
+        console.error('❌ Game end timer processing error:', error);
         throw error;
       }
     });
@@ -143,9 +211,9 @@ class QueueService {
   }
 
   async processQuestion(data) {
-    const { to, questionText, options, questionNumber } = data;
+    const { to, questionText, options, questionNumber, correctAnswer } = data;
     const whatsappService = require('./whatsappService');
-    return await whatsappService.sendQuestion(to, questionText, options, questionNumber);
+    return await whatsappService.sendQuestion(to, questionText, options, questionNumber, correctAnswer);
   }
 
   async processElimination(data) {
@@ -158,6 +226,24 @@ class QueueService {
     const { to, winnerCount, prizePool, individualPrize } = data;
     const whatsappService = require('./whatsappService');
     return await whatsappService.sendWinnerAnnouncement(to, winnerCount, prizePool, individualPrize);
+  }
+
+  async processTimerUpdate(data) {
+    const { to, questionNumber, timeLeft, questionText, options, correctAnswer } = data;
+    const whatsappService = require('./whatsappService');
+    return await whatsappService.sendTimerUpdate(to, questionNumber, timeLeft, questionText, options, correctAnswer);
+  }
+
+  async processGameStart(data) {
+    const { to, gameInfo } = data;
+    const whatsappService = require('./whatsappService');
+    return await whatsappService.sendGameStartMessage(to, gameInfo);
+  }
+
+  async processGameEnd(data) {
+    const { to, gameResult } = data;
+    const whatsappService = require('./whatsappService');
+    return await whatsappService.sendGameEndMessage(to, gameResult);
   }
 
   // Process game timer events

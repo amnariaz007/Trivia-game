@@ -8,6 +8,73 @@ class GameService {
     this.activeGames = new Map(); // In-memory game state
   }
 
+  // Restore active games from database on server startup
+  async restoreActiveGames() {
+    try {
+      console.log('🔄 Restoring active games from database...');
+      
+      const activeGames = await Game.findAll({
+        where: { status: 'in_progress' },
+        include: [
+          { model: Question, as: 'questions', order: [['question_order', 'ASC']] },
+          { 
+            model: GamePlayer, 
+            as: 'players',
+            include: [{ model: User, as: 'user' }]
+          }
+        ]
+      });
+
+      for (const game of activeGames) {
+        console.log(`🔄 Restoring game: ${game.id}`);
+        
+        // Convert database models to in-memory format
+        const gameState = {
+          id: game.id,
+          status: game.status,
+          currentQuestion: game.current_question || 0,
+          questions: game.questions.map(q => ({
+            id: q.id,
+            question_text: q.question_text,
+            correct_answer: q.correct_answer,
+            option_a: q.option_a,
+            option_b: q.option_b,
+            option_c: q.option_c,
+            option_d: q.option_d,
+            time_limit: q.time_limit || 10
+          })),
+          players: game.players.map(p => ({
+            user: {
+              id: p.user.id,
+              nickname: p.user.nickname,
+              whatsapp_number: p.user.whatsapp_number
+            },
+            status: p.status,
+            answer: null, // Reset answers since we can't restore them
+            answerTime: null
+          })),
+          startTime: game.start_time || new Date(),
+          questionTimer: null
+        };
+
+        this.activeGames.set(game.id, gameState);
+        console.log(`✅ Restored game ${game.id} with ${gameState.players.length} players`);
+      }
+
+      console.log(`✅ Restored ${activeGames.length} active games`);
+      
+    } catch (error) {
+      console.error('❌ Error restoring active games:', error);
+    }
+  }
+
+  // Generate timer bar visualization
+  generateTimerBar(seconds) {
+    const totalBlocks = 10;
+    const filledBlocks = Math.ceil((seconds / 10) * totalBlocks);
+    return '■'.repeat(filledBlocks) + '□'.repeat(totalBlocks - filledBlocks);
+  }
+
   // Start a new game
   async startGame(gameId) {
     try {
@@ -27,12 +94,32 @@ class GameService {
       game.start_time = new Date();
       await game.save();
 
+      // Only include players who have actively joined (status: 'registered' or 'alive')
+      const activePlayers = game.players.filter(player => 
+        player.status === 'registered' || player.status === 'alive'
+      );
+
+      if (activePlayers.length === 0) {
+        throw new Error('No players have joined this game. Game cannot start.');
+      }
+
+      // Update all joined players to 'alive' status in database
+      await GamePlayer.update(
+        { status: 'alive' },
+        { 
+          where: { 
+            game_id: gameId,
+            status: 'registered'
+          } 
+        }
+      );
+
       // Initialize game state with proper structure
       const gameState = {
         gameId,
         currentQuestion: 0,
         questions: game.questions,
-        players: game.players.map(player => ({
+        players: activePlayers.map(player => ({
           ...player.toJSON(),
           status: 'alive',
           answer: null,
@@ -55,7 +142,7 @@ class GameService {
         this.startQuestion(gameId, 0);
       }, 5000);
 
-      console.log(`🎮 Game ${gameId} started with ${gameState.players.size} players`);
+      console.log(`🎮 Game ${gameId} started with ${gameState.players.length} players`);
       return gameState;
 
     } catch (error) {
@@ -107,6 +194,7 @@ class GameService {
             questionNumber: questionIndex + 1,
             questionText: question.question_text,
             options: [question.option_a, question.option_b, question.option_c, question.option_d],
+            correctAnswer: question.correct_answer,
             timeLimit: 10
           });
         }
@@ -158,8 +246,12 @@ class GameService {
   // Handle question timeout
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
+      console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations`);
       const gameState = this.activeGames.get(gameId);
-      if (!gameState) return;
+      if (!gameState) {
+        console.log(`❌ Game state not found for ${gameId} during timeout`);
+        return;
+      }
 
       const game = await Game.findByPk(gameId, {
         include: [{ model: Question, as: 'questions' }]
@@ -169,37 +261,21 @@ class GameService {
       const correctAnswer = question.correct_answer;
 
       // Eliminate players who haven't answered
-      for (const [phoneNumber, player] of gameState.players) {
-        if (player.isAlive && !player.hasAnswered) {
-          player.isAlive = false;
-          gameState.eliminatedPlayers.add(phoneNumber);
+      for (const player of gameState.players) {
+        if (player.status === 'alive' && !player.answer) {
+          player.status = 'eliminated';
           
           // Send elimination message
           await queueService.addMessage('send_elimination', {
-            to: phoneNumber,
+            to: player.user.whatsapp_number,
             correctAnswer,
             isCorrect: false
           });
         }
       }
 
-      // Send results to all players
+      // Send results to all players (this will handle game continuation)
       await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
-
-      // Check if game should continue
-      const aliveCount = Array.from(gameState.players.values()).filter(p => p.isAlive).length;
-      
-      if (aliveCount <= 1) {
-        // Game over
-        setTimeout(() => {
-          this.endGame(gameId);
-        }, 3000);
-      } else {
-        // Continue to next question
-        setTimeout(() => {
-          this.startQuestion(gameId, questionIndex + 1);
-        }, 3000);
-      }
 
     } catch (error) {
       console.error('❌ Error handling question timeout:', error);
@@ -209,46 +285,85 @@ class GameService {
     // Handle player answer
   async handlePlayerAnswer(gameId, phoneNumber, answer) {
     try {
+      console.log(`🎯 handlePlayerAnswer called: gameId=${gameId}, phone=${phoneNumber}, answer="${answer}"`);
+      
       const gameState = this.activeGames.get(gameId);
       if (!gameState) {
+        console.log(`❌ Game not found: ${gameId}`);
         throw new Error('Game not found or not active');
       }
 
       const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
       if (!player) {
+        console.log(`❌ Player not found: ${phoneNumber}`);
         throw new Error('Player not found in game');
       }
 
+      console.log(`👤 Player found: ${player.user.nickname}, status: ${player.status}, hasAnswer: ${!!player.answer}`);
+
       if (player.status !== 'alive') {
+        console.log(`❌ Player not alive: ${player.status}`);
         throw new Error('Player not active in game');
       }
 
       if (player.answer) {
+        console.log(`❌ Player already answered: ${player.answer}`);
         throw new Error('Player already answered this question');
       }
 
       // Record the answer
       player.answer = answer;
       player.answerTime = Date.now();
+      console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
+      
+      // Don't clear the timer - let it expire naturally to process results
+      console.log(`⏰ Player ${player.user.nickname} answered, timer will continue until expiration`);
+
+      const currentQuestion = gameState.questions[gameState.currentQuestion];
+      const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
+      
+      console.log(`🔍 Answer comparison:`);
+      console.log(`🔍 Player answer: "${answer}"`);
+      console.log(`🔍 Correct answer: "${currentQuestion.correct_answer}"`);
+      console.log(`🔍 Is correct: ${isCorrect}`);
 
       // Save to database
       await PlayerAnswer.create({
         game_id: gameId,
         user_id: player.user.id,
-        question_id: gameState.questions[gameState.currentQuestion].id,
+        question_id: currentQuestion.id,
         selected_answer: answer,
-        is_correct: answer === gameState.questions[gameState.currentQuestion].correct_answer,
+        is_correct: isCorrect,
         response_time_ms: Date.now() - gameState.startTime.getTime(),
         question_number: gameState.currentQuestion + 1
       });
 
-      console.log(`📝 Player ${player.user.nickname} answered: ${answer}`);
+      console.log(`📝 Player ${player.user.nickname} answered: ${answer} (${isCorrect ? 'CORRECT' : 'WRONG'})`);
 
       // Send confirmation message
       await queueService.addMessage('send_message', {
         to: phoneNumber,
         message: `✅ Answer locked in! Please wait until the next round.`
       });
+
+      // Check if all alive players have answered
+      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+      const answeredPlayers = alivePlayers.filter(p => p.answer);
+      
+      console.log(`🔍 Answer check: ${answeredPlayers.length}/${alivePlayers.length} players answered`);
+      
+      // Only process results immediately if player answered incorrectly
+      // For correct answers, wait for the timer to expire
+      if (!isCorrect) {
+        console.log(`🎯 Player answered incorrectly, processing results immediately`);
+        // Player answered incorrectly, process results immediately
+        setTimeout(() => {
+          this.sendQuestionResults(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
+        }, 2000); // 2 second delay to show the "locked in" message
+      } else {
+        console.log(`✅ Player answered correctly, waiting for timer to expire`);
+        // Player answered correctly, wait for the timer to expire naturally
+      }
 
       return {
         correct: answer === gameState.questions[gameState.currentQuestion].correct_answer,
@@ -276,7 +391,14 @@ class GameService {
             to: phoneNumber,
             questionText: question.question_text,
             options,
-            questionNumber
+            questionNumber,
+            correctAnswer: question.correct_answer
+          });
+        } else {
+          // Send spectator update to eliminated players
+          await queueService.addMessage('send_message', {
+            to: phoneNumber,
+            message: `👀 Q${questionNumber}: ${question.question_text}\n\nYou're watching as a spectator.`
           });
         }
       }
@@ -299,12 +421,13 @@ class GameService {
       // Send timer update to all alive players who haven't answered
       for (const player of players) {
         if (player.status === 'alive' && !player.answer) {
-          await queueService.addMessage('send_timer_update', {
+          // Only send timer update as text message, not interactive
+          const timerBar = this.generateTimerBar(timeLeft);
+          const message = `⏰ Time left: ${timerBar} ${timeLeft}s`;
+          
+          await queueService.addMessage('send_message', {
             to: player.user.whatsapp_number,
-            questionNumber,
-            timeLeft,
-            questionText: question.question_text,
-            options: [question.option_a, question.option_b, question.option_c, question.option_d]
+            message: message
           });
         }
       }
@@ -327,6 +450,7 @@ class GameService {
 
       // Eliminate players who didn't answer
       for (const player of players) {
+        console.log(`🔍 Checking player ${player.user.nickname}: status=${player.status}, answer="${player.answer}"`);
         if (player.status === 'alive' && !player.answer) {
           // Eliminate player for not answering
           player.status = 'eliminated';
@@ -382,6 +506,73 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
     }
   }
 
+  // Handle player elimination due to 24-hour window expiration
+  async handlePlayerElimination(gameId, phoneNumber, reason = '24h_window_expired') {
+    try {
+      console.log(`⏰ Handling player elimination for ${phoneNumber} in game ${gameId}, reason: ${reason}`);
+      
+      const gameState = this.activeGames.get(gameId);
+      if (!gameState) {
+        console.log(`❌ Game ${gameId} not found in active games`);
+        return;
+      }
+
+      const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
+      if (!player || player.status !== 'alive') {
+        console.log(`❌ Player ${phoneNumber} not found or not alive in game ${gameId}`);
+        return;
+      }
+
+      // Mark player as eliminated
+      player.status = 'eliminated';
+      player.eliminatedAt = new Date();
+      player.eliminatedOnQuestion = gameState.currentQuestion + 1;
+      player.eliminationReason = reason;
+      
+      // Update database
+      await GamePlayer.update(
+        { 
+          status: 'eliminated',
+          eliminated_at: new Date(),
+          eliminated_on_question: gameState.currentQuestion + 1
+        },
+        { 
+          where: { 
+            game_id: gameId,
+            user_id: player.user.id 
+          } 
+        }
+      );
+
+      console.log(`❌ Player ${player.user.nickname} eliminated due to ${reason} on Q${gameState.currentQuestion + 1}`);
+
+      // Check if game should end (all players eliminated)
+      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+      
+      if (alivePlayers.length === 0) {
+        console.log(`💀 All players eliminated, ending game ${gameId}`);
+        await this.endGame(gameId);
+        return;
+      }
+
+      // If this was during a question, check if all remaining players have answered
+      if (gameState.currentQuestion < gameState.questions.length) {
+        const currentQuestion = gameState.questions[gameState.currentQuestion];
+        const answeredPlayers = alivePlayers.filter(p => p.answer);
+        
+        if (answeredPlayers.length === alivePlayers.length) {
+          console.log(`🎯 All remaining players answered, processing results immediately`);
+          setTimeout(() => {
+            this.sendQuestionResults(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
+          }, 2000);
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Error handling player elimination:', error);
+    }
+  }
+
   // Send question results and handle eliminations
   async sendQuestionResults(gameId, questionIndex, correctAnswer) {
     try {
@@ -397,7 +588,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       for (const player of players) {
         if (player.status !== 'alive') continue;
 
-        const isCorrect = player.answer === correctAnswer;
+        const isCorrect = player.answer && player.answer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
         
         if (!isCorrect) {
           // Eliminate player
@@ -450,7 +641,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
 
       // Continue to next question
       console.log(`⏭️  Continuing to next question. ${alivePlayers.length} players alive`);
-      await this.startNextQuestion(gameId);
+      setTimeout(() => {
+        this.startQuestion(gameId, questionIndex + 1);
+      }, 3000); // 3 second delay before next question
 
     } catch (error) {
       console.error('❌ Error sending question results:', error);
@@ -469,6 +662,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       }
 
       // Clean up game state
+      console.log(`🧹 Cleaning up game state for: ${gameId}`);
       this.activeGames.delete(gameId);
       console.log(`🧹 Game state cleaned up for: ${gameId}`);
 
@@ -509,12 +703,23 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
 
   // Get active game for a player
   async getActiveGameForPlayer(phoneNumber) {
+    console.log(`🔍 Looking for active game for player: ${phoneNumber}`);
+    console.log(`🔍 Active games count: ${this.activeGames.size}`);
+    
     for (const [gameId, gameState] of this.activeGames) {
+      console.log(`🔍 Checking game ${gameId}:`);
+      console.log(`🔍 - Players count: ${gameState.players.length}`);
+      console.log(`🔍 - Current question: ${gameState.currentQuestion}`);
+      console.log(`🔍 - Game status: ${gameState.status}`);
+      
       const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
       if (player) {
+        console.log(`✅ Found player in game ${gameId}`);
         return { gameId, gameState, player };
       }
     }
+    
+    console.log(`❌ No active game found for player ${phoneNumber}`);
     return null;
   }
 

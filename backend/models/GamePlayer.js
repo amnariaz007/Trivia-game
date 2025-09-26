@@ -24,8 +24,8 @@ const GamePlayer = sequelize.define('GamePlayer', {
     }
   },
   status: {
-    type: DataTypes.ENUM('alive', 'eliminated', 'winner'),
-    defaultValue: 'alive',
+    type: DataTypes.ENUM('registered', 'alive', 'eliminated', 'winner'),
+    defaultValue: 'registered',
     allowNull: false
   },
   eliminated_at: {
