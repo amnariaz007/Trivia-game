@@ -23,7 +23,20 @@ fi
 
 # Initialize database if needed (production-safe)
 echo "🗄️  Initializing database..."
-node scripts/init-db-production.js
+if node scripts/init-db-production.js; then
+  echo "✅ Database initialization completed successfully"
+else
+  echo "⚠️  Database initialization failed, but continuing..."
+  echo "⚠️  The app will attempt to create tables on startup"
+fi
+
+# Check database tables
+echo "🔍 Checking database tables..."
+if node scripts/check-db-tables.js; then
+  echo "✅ Database tables verified"
+else
+  echo "⚠️  Database table check failed, but continuing..."
+fi
 
 # Start the backend server
 echo "🚀 Starting backend server..."

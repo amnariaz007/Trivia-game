@@ -95,8 +95,14 @@ async function initializeApp() {
       process.exit(1);
     }
     
-    // Restore active games from database
-    await gameService.restoreActiveGames();
+    // Restore active games from database (with table creation)
+    try {
+      await gameService.restoreActiveGames();
+      console.log('✅ Active games restored successfully');
+    } catch (error) {
+      console.warn('⚠️  Failed to restore active games:', error.message);
+      console.log('⚠️  Continuing without restoring active games');
+    }
     
     // Start server
     app.listen(PORT, () => {

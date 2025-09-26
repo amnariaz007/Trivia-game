@@ -13,6 +13,11 @@ class GameService {
     try {
       console.log('🔄 Restoring active games from database...');
       
+      // First, ensure database tables exist
+      const { sequelize } = require('../config/database');
+      await sequelize.sync({ force: false }); // Create tables if they don't exist
+      console.log('✅ Database tables synchronized');
+      
       const activeGames = await Game.findAll({
         where: { status: 'in_progress' },
         include: [
@@ -64,6 +69,7 @@ class GameService {
       console.log(`✅ Restored ${activeGames.length} active games`);
       
     } catch (error) {
+      console.log("game  restoreee errorrrr  1");
       console.error('❌ Error restoring active games:', error);
     }
   }
