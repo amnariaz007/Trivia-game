@@ -1,0 +1,37 @@
+# Frontend files (we're only deploying backend to Railway)
+frontend/
+frontend/**
+
+# Development files
+.DS_Store
+*.log
+.env.local
+.env.development
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+DEPLOYMENT.md
+*.md
+
+# Deployment scripts for other platforms
+deploy.sh
+start-admin.sh
+
+# Test files
+**/test/
+**/tests/
+**/*.test.js
+**/*.spec.js
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
