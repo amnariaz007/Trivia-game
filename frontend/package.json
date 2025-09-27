@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "node server.js",
+    "start": "PORT=${PORT:-3000} node .next/standalone/server.js",
     "lint": "next lint",
     "dev-full": "concurrently \"npm run dev\" \"cd .. && npm start\"",
     "deploy": "vercel --prod",
