@@ -69,8 +69,8 @@ router.get('/stats', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const users = await User.findAll({
-      attributes: ['id', 'nickname', 'whatsapp_number', 'is_active', 'created_at', 'last_activity'],
-      order: [['created_at', 'DESC']]
+      attributes: ['id', 'nickname', 'whatsapp_number', 'is_active', 'createdAt', 'last_activity'],
+      order: [['createdAt', 'DESC']]
     });
     
     res.json(users);
@@ -94,7 +94,7 @@ router.get('/games', async (req, res) => {
           attributes: ['nickname']
         }]
       }],
-      order: [['created_at', 'DESC']]
+      order: [['createdAt', 'DESC']]
     });
     
     res.json(games);
