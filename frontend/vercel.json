@@ -17,6 +17,7 @@
     }
   ],
   "env": {
-    "NEXT_PUBLIC_SITE_URL": "https://qrushtrivia.com"
+    "NEXT_PUBLIC_SITE_URL": "https://qrushtrivia.com",
+    "NEXT_PUBLIC_API_URL": "https://ingenious-abundance-production.up.railway.app"
   }
 }

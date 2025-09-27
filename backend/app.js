@@ -29,7 +29,11 @@ app.use(helmet());
 // CORS configuration
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
-    ? ['https://yourdomain.com'] 
+    ? [
+        'https://qrush-trivia.vercel.app', // Your Vercel frontend domain
+        'https://qrush-trivia-git-main.vercel.app', // Vercel preview deployments
+        'https://qrush-trivia-*.vercel.app' // Wildcard for all Vercel deployments
+      ] 
     : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'],
   credentials: true
 }));

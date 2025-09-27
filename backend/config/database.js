@@ -1,12 +1,9 @@
 const { Sequelize } = require('sequelize');
-console.log("Nishaani");
-console.log(process.env.DATABASE_URL);
-
-
 
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   protocol: 'postgres',
+  logging: false, // Disable SQL query logging
   dialectOptions: {
     ssl: {
       require: true,
@@ -22,7 +19,6 @@ const testConnection = async () => {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
   } catch (error) {
-    console.log("Testing error database");
     console.error('❌ Unable to connect to the database:', error);
     process.exit(1);
   }

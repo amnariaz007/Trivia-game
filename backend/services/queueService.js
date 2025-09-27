@@ -2,8 +2,6 @@ const Queue = require('bull');
 const Redis = require('ioredis');
 
 console.log('🔧 Initializing Queue Service...');
-console.log('REDIS_URL:', process.env.REDIS_URL ? 'SET' : 'NOT SET');
-console.log('REDIS_URL value:', process.env.REDIS_URL);
 
 class QueueService {
   constructor() {
@@ -18,21 +16,24 @@ class QueueService {
 
   initializeRedis() {
     if (!process.env.REDIS_URL) {
+      console.log("RAW REDIS_URL:", JSON.stringify(process.env.REDIS_URL));
       console.log('⚠️  REDIS_URL not found, running without Redis queues');
       return;
     }
 
     try {
       console.log('🔄 Creating Redis connection...');
+      console.log('🔍 Redis URL:', process.env.REDIS_URL);
 
       // Auto-detect TLS based on rediss:// scheme
       const needsTLS = process.env.REDIS_URL.startsWith("rediss://");
+      console.log('🔍 TLS required:', needsTLS);
 
       this.redis = new Redis(process.env.REDIS_URL, {
         tls: needsTLS ? {} : undefined,
         maxRetriesPerRequest: null,
         enableReadyCheck: true,
-        connectTimeout: 10000, // more lenient timeout
+        connectTimeout: 10000,
         family: 4, // IPv4
         keepAlive: 30000,
       });
@@ -44,14 +45,21 @@ class QueueService {
       });
 
       this.redis.on("error", (err) => {
-        console.error("❌ Redis connection failed:", err.message);
-        console.log("⚠️  Continuing without Redis - app will work with reduced functionality");
-        this.redisConnected = false;
-        this.redis = null;
+        if (!this.redisConnected) {
+          console.log("❌ Redis connection error details:");
+          console.log("   Error message:", err.message);
+          console.log("   Error code:", err.code);
+          console.log("   Error errno:", err.errno);
+          console.log("   Error syscall:", err.syscall);
+          console.log("   Error address:", err.address);
+          console.log("   Error port:", err.port);
+          console.log("⚠️  Continuing without Redis - app will work with reduced functionality");
+          this.redisConnected = false;
+          this.redis = null;
+        }
       });
 
       this.redis.on("close", () => {
-        console.log("⚠️  Redis connection closed");
         this.redisConnected = false;
       });
 
@@ -64,7 +72,13 @@ class QueueService {
       }, 10000);
 
     } catch (error) {
-      console.error('❌ Failed to initialize Redis:', error.message);
+      console.log("❌ Redis initialization error details:");
+      console.log("   Error message:", error.message);
+      console.log("   Error code:", error.code);
+      console.log("   Error errno:", error.errno);
+      console.log("   Error syscall:", error.syscall);
+      console.log("   Error address:", error.address);
+      console.log("   Error port:", error.port);
       console.log("⚠️  Continuing without Redis - app will work with reduced functionality");
       this.redis = null;
     }
