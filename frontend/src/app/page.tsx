@@ -15,7 +15,13 @@ export default function BusinessPage() {
               <a href="#services" className="text-gray-700 hover:text-indigo-600 transition-colors">Services</a>
               <a href="#contact" className="text-gray-700 hover:text-indigo-600 transition-colors">Contact</a>
               <a href="/privacy-policy" className="text-gray-700 hover:text-indigo-600 transition-colors">Privacy Policy</a>
+              <a href="/login" className="text-gray-700 hover:text-indigo-600 transition-colors">Admin Login</a>
             </nav>
+            
+            {/* Mobile menu button */}
+            <div className="md:hidden">
+              <a href="/login" className="text-gray-700 hover:text-indigo-600 transition-colors">Admin Login</a>
+            </div>
           </div>
         </div>
       </header>
@@ -274,6 +280,7 @@ export default function BusinessPage() {
                 <li><a href="#services" className="hover:text-white transition-colors">Services</a></li>
                 <li><a href="#contact" className="hover:text-white transition-colors">Contact</a></li>
                 <li><a href="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</a></li>
+                <li><a href="/login" className="hover:text-white transition-colors">Admin Login</a></li>
               </ul>
             </div>
             

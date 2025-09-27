@@ -137,7 +137,14 @@ router.get('/users', async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
     
-    res.json(users);
+    // Format dates properly
+    const formattedUsers = users.map(user => ({
+      ...user.toJSON(),
+      createdAt: user.createdAt ? new Date(user.createdAt).toLocaleString() : 'N/A',
+      last_activity: user.last_activity ? new Date(user.last_activity).toLocaleString() : 'N/A'
+    }));
+    
+    res.json(formattedUsers);
   } catch (error) {
     console.error('❌ Error getting users:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -161,7 +168,15 @@ router.get('/games', async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
     
-    res.json(games);
+    // Format dates properly
+    const formattedGames = games.map(game => ({
+      ...game.toJSON(),
+      createdAt: game.createdAt ? new Date(game.createdAt).toLocaleString() : 'N/A',
+      start_time: game.start_time ? new Date(game.start_time).toLocaleString() : 'N/A',
+      end_time: game.end_time ? new Date(game.end_time).toLocaleString() : 'N/A'
+    }));
+    
+    res.json(formattedGames);
   } catch (error) {
     console.error('❌ Error getting games:', error);
     res.status(500).json({ error: 'Internal server error' });
