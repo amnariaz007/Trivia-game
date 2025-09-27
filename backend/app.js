@@ -35,6 +35,9 @@ app.use(cors({
     const allowedOrigins = [
       'https://qrush-trivia.vercel.app',
       'https://qrush-trivia-git-main.vercel.app',
+      'https://trivia-game-production-1674.up.railway.app',
+      'https://qrushtrivia.com',
+      'https://www.qrushtrivia.com',
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002'
@@ -57,7 +60,10 @@ app.use(cors({
     
     callback(new Error('Not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'username', 'password'],
+  optionsSuccessStatus: 200
 }));
 
 // Rate limiting
