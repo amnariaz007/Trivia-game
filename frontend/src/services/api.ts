@@ -19,7 +19,10 @@ class ApiService {
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${API_BASE_URL}${endpoint}`;
+    // Ensure no double slashes in URL
+    const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = `${baseUrl}${cleanEndpoint}`;
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -92,7 +95,8 @@ class ApiService {
     const formData = new FormData();
     formData.append('csvFile', file);
     
-    const url = `${API_BASE_URL}/admin/games/${gameId}/questions/import-csv`;
+    const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+    const url = `${baseUrl}/admin/games/${gameId}/questions/import-csv`;
     const credentials = localStorage.getItem('admin_credentials');
     const [username, password] = credentials ? credentials.split(':') : ['', ''];
     
@@ -130,7 +134,8 @@ class ApiService {
 
   // Export game results as CSV
   async exportGameCSV(gameId: string): Promise<Blob> {
-    const url = `${API_BASE_URL}/admin/games/${gameId}/export`;
+    const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+    const url = `${baseUrl}/admin/games/${gameId}/export`;
     const response = await fetch(url, {
       headers: this.getAuthHeaders(),
     });

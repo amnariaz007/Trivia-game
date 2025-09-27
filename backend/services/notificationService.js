@@ -61,7 +61,7 @@ class NotificationService {
 Game starts in 30 minutes!
 
 💰 Prize pool: $${game.prize_pool}
-⏰ Start time: ${new Date(game.start_time).toLocaleString()}
+⏰ Start time: ${new Date(game.start_time).toLocaleString()} GMT
 
 Get ready for sudden-death questions!`
         });
@@ -86,12 +86,10 @@ Get ready for sudden-death questions!`
       for (const player of players) {
         await queueService.addMessage('send_message', {
           to: player.user.whatsapp_number,
-          message: `🚨 QRush Trivia starts in 5 minutes!
+          message: `💰 Prize pool: $${game.prize_pool}
+⏰ Start time: ${new Date(game.start_time).toLocaleString()} GMT
 
-💰 Prize pool: $${game.prize_pool}
-⏰ Get ready - questions are coming!
-
-Make sure you're available to play!`
+We will send you a reminder when the game starts.`
         });
       }
 
