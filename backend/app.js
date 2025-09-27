@@ -28,14 +28,35 @@ app.use(helmet());
 
 // CORS configuration
 app.use(cors({
-  origin: [
-    'https://qrush-trivia.vercel.app', // Your Vercel frontend domain
-    'https://qrush-trivia-git-main.vercel.app', // Vercel preview deployments
-    'https://qrush-trivia-*.vercel.app', // Wildcard for all Vercel deployments
-    'http://localhost:3000', // Local development
-    'http://localhost:3001', // Local development
-    'http://localhost:3002'  // Local development
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'https://qrush-trivia.vercel.app',
+      'https://qrush-trivia-git-main.vercel.app',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002'
+    ];
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+    
+    // Check for Vercel preview deployments (pattern matching)
+    if (origin && origin.includes('qrush-trivia') && origin.includes('vercel.app')) {
+      return callback(null, true);
+    }
+    
+    // For development, allow localhost with any port
+    if (origin && origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 
