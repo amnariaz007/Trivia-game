@@ -36,6 +36,7 @@ app.use(cors({
       'https://qrush-trivia.vercel.app',
       'https://qrush-trivia-git-main.vercel.app',
       'https://trivia-game-production-1674.up.railway.app',
+      'https://trivia-game-production-5a11.up.railway.app',
       'https://qrushtrivia.com',
       'https://www.qrushtrivia.com',
       'http://localhost:3000',
