@@ -165,6 +165,16 @@ class QueueService {
       }
     });
 
+    this.messageQueue.process('send_elimination', 1, async (job) => {
+      try {
+        console.log('📤 Processing send_elimination job:', job.id);
+        return await this.processElimination(job.data);
+      } catch (error) {
+        console.error('❌ Elimination queue processing error:', error);
+        throw error;
+      }
+    });
+
     this.gameQueue.process('game_timer', 1, async (job) => {
       try {
         console.log('⏰ Processing game_timer job:', job.id);
@@ -278,6 +288,12 @@ class QueueService {
     const { to, questionText, options, questionNumber, correctAnswer } = data;
     const whatsappService = require('./whatsappService');
     return await whatsappService.sendQuestion(to, questionText, options, questionNumber, correctAnswer);
+  }
+
+  async processElimination(data) {
+    const { to, correctAnswer, isCorrect } = data;
+    const whatsappService = require('./whatsappService');
+    return await whatsappService.sendEliminationMessage(to, correctAnswer, isCorrect);
   }
 
   async processGameTimer(data) {
