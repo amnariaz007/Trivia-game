@@ -314,6 +314,49 @@ class QueueService {
     }
   }
 
+  // Session management methods
+  async getSession(userId) {
+    if (!this.redis) {
+      console.log('⚠️  Redis not available for session management');
+      return null;
+    }
+    try {
+      const sessionData = await this.redis.get(`session:${userId}`);
+      return sessionData ? JSON.parse(sessionData) : null;
+    } catch (error) {
+      console.error('❌ Error getting session:', error.message);
+      return null;
+    }
+  }
+
+  async setSession(userId, sessionData) {
+    if (!this.redis) {
+      console.log('⚠️  Redis not available for session management');
+      return false;
+    }
+    try {
+      await this.redis.setex(`session:${userId}`, 3600, JSON.stringify(sessionData)); // 1 hour expiry
+      return true;
+    } catch (error) {
+      console.error('❌ Error setting session:', error.message);
+      return false;
+    }
+  }
+
+  async deleteSession(userId) {
+    if (!this.redis) {
+      console.log('⚠️  Redis not available for session management');
+      return false;
+    }
+    try {
+      await this.redis.del(`session:${userId}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error deleting session:', error.message);
+      return false;
+    }
+  }
+
   async cleanup() {
     console.log('🧹 Cleaning up queues...');
     if (this.messageQueue) await this.messageQueue.close();

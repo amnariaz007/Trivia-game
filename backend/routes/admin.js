@@ -35,6 +35,70 @@ const authenticateAdmin = (req, res, next) => {
 // Apply authentication to all admin routes
 router.use(authenticateAdmin);
 
+// Send test message
+router.post('/send-message', async (req, res) => {
+  try {
+    const { to, message } = req.body;
+    
+    if (!to || !message) {
+      return res.status(400).json({ error: 'Missing required fields: to, message' });
+    }
+    
+    const queueService = require('../services/queueService');
+    const job = await queueService.addMessage('send_message', {
+      to: to,
+      message: message
+    });
+    
+    if (job) {
+      res.json({ 
+        success: true, 
+        message: 'Message queued successfully',
+        jobId: job.id 
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to queue message' });
+    }
+  } catch (error) {
+    console.error('❌ Error sending message:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Fix user registration
+router.post('/fix-user-registration', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ error: 'Missing required field: phoneNumber' });
+    }
+    
+    const user = await User.findByWhatsAppNumber(phoneNumber);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Fix registration status
+    user.registration_completed = true;
+    await user.save();
+    
+    res.json({ 
+      success: true, 
+      message: 'User registration fixed',
+      user: {
+        id: user.id,
+        nickname: user.nickname,
+        whatsapp_number: user.whatsapp_number,
+        registration_completed: user.registration_completed
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fixing user registration:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get dashboard stats
 router.get('/stats', async (req, res) => {
   try {
