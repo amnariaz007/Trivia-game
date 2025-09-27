@@ -255,13 +255,13 @@ class QueueService {
   async processMessage(data) {
     const { to, message } = data;
     const whatsappService = require('./whatsappService');
-    return await whatsappService.sendMessage(to, message);
+    return await whatsappService.sendTextMessage(to, message);
   }
 
   async processTemplate(data) {
     const { to, templateName, parameters } = data;
     const whatsappService = require('./whatsappService');
-    return await whatsappService.sendTemplate(to, templateName, parameters);
+    return await whatsappService.sendTemplateMessage(to, templateName, parameters);
   }
 
   async processGameTimer(data) {
