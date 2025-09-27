@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   trailingSlash: false,
-  output: 'standalone',
   images: {
     unoptimized: true,
   },
