@@ -1,13 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
   trailingSlash: false,
+  output: 'standalone',
   images: {
     unoptimized: true,
-  },
-  experimental: {
-    serverComponentsExternalPackages: [],
   },
   async headers() {
     return [
