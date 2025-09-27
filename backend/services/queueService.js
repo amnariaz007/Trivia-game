@@ -93,23 +93,17 @@ class QueueService {
       console.log('⚠️  Redis not available, skipping queue initialization');
       return;
     }
-
+  
     try {
       console.log('🔄 Initializing Bull queues...');
-      const needsTLS = process.env.REDIS_URL.startsWith("rediss://");
-
-      // Pass URL directly
-      this.messageQueue = new Queue('whatsapp-messages', process.env.REDIS_URL, {
-        redis: needsTLS ? { tls: {} } : {}
-      });
-
-      this.gameQueue = new Queue('game-timers', process.env.REDIS_URL, {
-        redis: needsTLS ? { tls: {} } : {}
-      });
-
+  
+      // Just pass the URL (Bull handles redis:// vs rediss:// automatically)
+      this.messageQueue = new Queue('whatsapp-messages', process.env.REDIS_URL);
+      this.gameQueue = new Queue('game-timers', process.env.REDIS_URL);
+  
       this.setupQueueHandlers();
       this.setupQueueEvents();
-
+  
       console.log('✅ Queues initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize queues:', error.message);
@@ -117,6 +111,7 @@ class QueueService {
       this.gameQueue = null;
     }
   }
+  
 
   setupQueueHandlers() {
     if (!this.messageQueue || !this.gameQueue) {
