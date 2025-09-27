@@ -50,6 +50,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('admin_credentials');
     localStorage.removeItem('admin_token');
     setIsAuthenticated(false);
+    // Redirect to login page
+    window.location.href = '/login';
   };
 
   return (

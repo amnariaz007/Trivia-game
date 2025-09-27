@@ -51,9 +51,7 @@ A modern Next.js admin dashboard for managing the QRush Trivia WhatsApp game.
 ### Login
 
 - **URL**: `http://localhost:3001/login`
-- **Default credentials**:
-  - Username: `admin`
-  - Password: `test123`
+- **Credentials**: Contact administrator for login credentials
 
 ### Dashboard Features
 

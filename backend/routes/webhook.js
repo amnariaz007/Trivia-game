@@ -296,7 +296,7 @@ async function handleExistingUser(user, messageText, buttonResponse, wa_id) {
 It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
 
 💰 Today's prize pool: $${prizePool}
-⏰ Next game: ${nextGameTime}
+⏰ Next game: ${nextGameTime} GMT
 
 Reply "PLAY" to get a reminder when we start!`
         });
@@ -415,7 +415,7 @@ async function handlePlayCommand(user, wa_id) {
         to: wa_id, // Use wa_id from webhook instead of stored phone number
         message: `📱 There's no game running right now.
 
-⏰ Next QRush Trivia: ${nextGameTime}
+⏰ Next QRush Trivia: ${nextGameTime} GMT
 💰 Prize pool: $${prizePool}
 
 Reply "PLAY" for a reminder.`
@@ -431,7 +431,7 @@ Reply "PLAY" for a reminder.`
         to: wa_id, // Use wa_id from webhook instead of stored phone number
         message: `🚫 The game is in progress and you can't join mid-round.
 
-⏰ Next game: ${nextGameTime}
+⏰ Next game: ${nextGameTime} GMT
 
 Reply "PLAY" to get a reminder before we start.`
       });
@@ -446,7 +446,7 @@ Reply "PLAY" to get a reminder before we start.`
       to: wa_id, // Use wa_id from webhook instead of stored phone number
       message: `🎮 QRush Trivia starts soon!
 
-⏰ Game begins at ${gameTime}
+⏰ Game begins at ${gameTime} GMT
 💰 Prize pool: $${prizePool}
 
 Tap "PLAY" to get the start ping!`
@@ -501,10 +501,10 @@ async function handleJoinCommand(user) {
       to: user.whatsapp_number,
       message: `🎉 You're registered for QRush Trivia!
 
-⏰ Game starts at: ${gameTime}
+⏰ Game starts at: ${gameTime} GMT
 💰 Prize pool: $${prizePool}
 
-We'll send you a reminder 5 minutes before the game starts!`
+We will send you a reminder when the game starts.`
     });
 
     console.log(`✅ User ${user.nickname} registered for game ${activeGame.id}`);
