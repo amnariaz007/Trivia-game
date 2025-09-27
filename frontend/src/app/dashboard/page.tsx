@@ -138,7 +138,7 @@ export default function DashboardPage() {
 
         {/* Users Management Section */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">👥 Manage Users</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">👥 Trivia Users</h2>
           <UsersList />
         </div>
       </div>

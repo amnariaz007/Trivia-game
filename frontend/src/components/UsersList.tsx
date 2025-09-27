@@ -8,7 +8,7 @@ interface User {
   nickname: string;
   whatsapp_number: string;
   is_active: boolean;
-  created_at: string;
+  createdAt: string;
   last_activity: string;
 }
 
@@ -35,7 +35,9 @@ export default function UsersList() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? 'N/A' : date.toLocaleString();
   };
 
   if (loading) {
@@ -91,10 +93,10 @@ export default function UsersList() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Registered
+                  Registered (UTC)
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Last Activity
+                  Last Activity (UTC)
                 </th>
               </tr>
             </thead>
@@ -117,7 +119,7 @@ export default function UsersList() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(user.created_at)}
+                    {formatDate(user.createdAt)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {user.last_activity ? formatDate(user.last_activity) : 'Never'}

@@ -57,7 +57,7 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label htmlFor="startTime" className="block text-sm font-medium text-gray-700 mb-2">
-              Start Time
+              Start Time (UTC)
             </label>
             <input
               type="datetime-local"

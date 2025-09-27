@@ -117,7 +117,7 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
                   <div className="mt-2 space-y-1 text-sm text-gray-600">
                     <p><strong>Status:</strong> {game.status.replace('_', ' ')}</p>
                     <p><strong>Prize Pool:</strong> ${game.prize_pool}</p>
-                    <p><strong>Start Time:</strong> {formatDate(game.start_time)}</p>
+                    <p><strong>Start Time (UTC):</strong> {formatDate(game.start_time)}</p>
                     <p><strong>Players:</strong> {game.players?.length || 0}</p>
                   </div>
                 </div>
