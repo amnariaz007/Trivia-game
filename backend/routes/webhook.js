@@ -501,7 +501,7 @@ async function handleJoinCommand(user) {
       to: user.whatsapp_number,
       message: `🎉 You're registered for QRush Trivia!
 
-⏰ Game starts at: ${gameTime} GMT
+⏰ Game starts at: ${gameTime} EST
 💰 Prize pool: $${prizePool}
 
 We will send you a reminder when the game starts.`

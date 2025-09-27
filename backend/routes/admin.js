@@ -477,7 +477,7 @@ router.post('/games/:id/register', async (req, res) => {
         to: user.whatsapp_number,
         message: `🎮 New QRush Trivia Game Available!
 
-⏰ Game starts at: ${gameTime}
+⏰ Game starts at: ${gameTime} EST
 💰 Prize pool: $${game.prize_pool}
 
 Reply "JOIN" to register for this game!
