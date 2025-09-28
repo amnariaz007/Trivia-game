@@ -1,18 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiService } from '@/services/api';
 
 interface AddQuestionsFormProps {
   onQuestionsAdded: () => void;
+  gameId?: string | null;
 }
 
-export default function AddQuestionsForm({ onQuestionsAdded }: AddQuestionsFormProps) {
-  const [gameId, setGameId] = useState('');
+export default function AddQuestionsForm({ onQuestionsAdded, gameId: propGameId }: AddQuestionsFormProps) {
+  const [gameId, setGameId] = useState(propGameId || '');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-
+  // Update gameId when prop changes
+  useEffect(() => {
+    if (propGameId) {
+      setGameId(propGameId);
+    }
+  }, [propGameId]);
 
   const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,16 +52,31 @@ export default function AddQuestionsForm({ onQuestionsAdded }: AddQuestionsFormP
       <div className="mb-6">
         <label htmlFor="gameId" className="block text-sm font-medium text-gray-700 mb-2">
           Game ID
+          {propGameId && (
+            <span className="ml-2 text-xs text-green-600 font-medium">
+              ✓ Auto-filled from created game
+            </span>
+          )}
         </label>
-                    <input
-              type="text"
-              id="gameId"
-              value={gameId}
-              onChange={(e) => setGameId(e.target.value)}
-              placeholder="Enter game ID"
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-500"
-            />
+        <input
+          type="text"
+          id="gameId"
+          value={gameId}
+          onChange={(e) => setGameId(e.target.value)}
+          placeholder="Enter game ID"
+          required
+          readOnly={!!propGameId}
+          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 text-gray-900 placeholder-gray-500 ${
+            propGameId 
+              ? 'border-green-300 bg-green-50 focus:ring-green-500 cursor-not-allowed' 
+              : 'border-gray-300 focus:ring-blue-500'
+          }`}
+        />
+        {propGameId && (
+          <p className="mt-1 text-xs text-green-600">
+            Game ID automatically filled from the game you just created! (Read-only)
+          </p>
+        )}
       </div>
 
 

@@ -296,6 +296,9 @@ router.post('/users/restore', async (req, res) => {
 // Get all games
 router.get('/games', async (req, res) => {
   try {
+    // First, check for and expire any games that should have started but haven't
+    await Game.getActiveGame(); // This will trigger the expiration logic
+    
     const games = await Game.findAll({
       include: [{
         model: GamePlayer,
@@ -304,19 +307,32 @@ router.get('/games', async (req, res) => {
         include: [{
           model: User,
           as: 'user',
-          attributes: ['nickname']
+          attributes: ['nickname', 'whatsapp_number']
         }]
       }],
       order: [['createdAt', 'DESC']]
     });
     
-    // Format dates properly
-    const formattedGames = games.map(game => ({
-      ...game.toJSON(),
-      createdAt: game.createdAt ? new Date(game.createdAt).toLocaleString() : 'N/A',
-      start_time: game.start_time ? new Date(game.start_time).toLocaleString() : 'N/A',
-      end_time: game.end_time ? new Date(game.end_time).toLocaleString() : 'N/A'
-    }));
+    // Format dates properly and add winner information
+    const formattedGames = games.map(game => {
+      const gameData = game.toJSON();
+      
+      // Extract winners
+      const winners = game.players
+        .filter(player => player.status === 'winner')
+        .map(player => ({
+          nickname: player.user.nickname,
+          whatsapp_number: player.user.whatsapp_number
+        }));
+      
+      return {
+        ...gameData,
+        createdAt: game.createdAt ? new Date(game.createdAt).toLocaleString() : 'N/A',
+        start_time: game.start_time ? new Date(game.start_time).toLocaleString() : 'N/A',
+        end_time: game.end_time ? new Date(game.end_time).toLocaleString() : 'N/A',
+        winners: winners
+      };
+    });
     
     res.json(formattedGames);
   } catch (error) {
@@ -328,65 +344,33 @@ router.get('/games', async (req, res) => {
 // Create a new game
 router.post('/games', async (req, res) => {
   try {
-    const { startTime, prizePool, totalQuestions, testMode } = req.body;
+    const { startTime, prizePool, totalQuestions } = req.body;
     
     if (!startTime || !prizePool) {
       return res.status(400).json({ error: 'Start time and prize pool are required' });
     }
     
+    // Validate start time - must be in the future
+    const gameStartTime = new Date(startTime);
+    const now = new Date();
+    
+    if (gameStartTime <= now) {
+      return res.status(400).json({ error: 'Start time must be in the future' });
+    }
+    
     const game = await Game.create({
-      start_time: new Date(startTime),
+      start_time: gameStartTime,
       prize_pool: prizePool,
       total_questions: totalQuestions || 10,
       status: 'scheduled'
     });
 
-    // If test mode, only notify test users
-    if (testMode) {
-      console.log(`🧪 Test game created: ${game.id} - Only test users will be notified`);
-      
-      // Create test users if they don't exist (from central config)
-      const testUsersConfig = require('../config/testUsers');
-      const testUsers = testUsersConfig.testUsers;
-      
-      for (const userData of testUsers) {
-        await User.findOrCreate({
-          where: { whatsapp_number: userData.whatsapp_number },
-          defaults: {
-            nickname: userData.nickname,
-            is_active: true,
-            registration_completed: true,
-            last_activity: new Date()
-          }
-        });
-      }
-      
-      // Only send notifications to test users
-      const queueService = require('../services/queueService');
-      const gameTime = new Date(game.start_time).toLocaleString();
-      
-      for (const userData of testUsers) {
-        await queueService.addMessage('send_message', {
-          to: userData.whatsapp_number,
-          message: `🎮 New QRush Trivia Game Available!
-
-⏰ Game starts at: ${gameTime} EST
-💰 Prize pool: $${game.prize_pool}
-
-Reply "JOIN" to register for this game!
-Only registered players will receive game notifications.`
-        });
-      }
-      
-      console.log(`✅ Test notifications sent to ${testUsers.length} test users only`);
-    } else {
-      // Normal game - schedule reminders for all users
-      const notificationService = require('../services/notificationService');
-      await notificationService.scheduleGameReminders(game.id);
-      console.log(`✅ Game created and reminders scheduled: ${game.id}`);
-    }
+    // Schedule reminders for all users
+    const notificationService = require('../services/notificationService');
+    await notificationService.scheduleGameReminders(game.id);
+    console.log(`✅ Game created and reminders scheduled: ${game.id}`);
     
-    res.status(201).json({ ...game.toJSON(), testMode: !!testMode });
+    res.status(201).json(game.toJSON());
   } catch (error) {
     console.error('❌ Error creating game:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -880,3 +864,4 @@ router.get('/games/:id/export', async (req, res) => {
 
 
 module.exports = router;
+

@@ -1,15 +1,37 @@
 const { whatsappConfig } = require('../config/whatsapp');
 const { User } = require('../models');
+const devConfig = require('../config/development');
 
 class WhatsAppService {
   constructor() {
     this.client = whatsappConfig.client;
     this.phoneNumberId = whatsappConfig.phoneNumberId;
+    this.isDevelopment = process.env.NODE_ENV === 'development';
+    this.testPhoneNumbers = devConfig.development.testPhoneNumbers || [];
   }
 
   // Send text message
   async sendTextMessage(to, text) {
     try {
+      // Development mode safety check
+      if (this.isDevelopment) {
+        if (devConfig.development.disableWhatsAppMessaging) {
+          console.log(`🔒 [DEV MODE] Message blocked to ${to}: ${text}`);
+          return { message: 'blocked_in_development' };
+        }
+        
+        if (devConfig.development.logMessagesOnly) {
+          console.log(`📝 [DEV MODE] Would send to ${to}: ${text}`);
+          return { message: 'logged_in_development' };
+        }
+        
+        // Only allow test phone numbers in development
+        if (!this.testPhoneNumbers.includes(to)) {
+          console.log(`🚫 [DEV MODE] Phone number ${to} not in test list. Message blocked.`);
+          return { message: 'blocked_not_test_number' };
+        }
+      }
+
       const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
         messaging_product: 'whatsapp',
         to: to,
@@ -51,6 +73,25 @@ class WhatsAppService {
   // Send interactive message with buttons
   async sendInteractiveMessage(to, body, buttons) {
     try {
+      // Development mode safety check
+      if (this.isDevelopment) {
+        if (devConfig.development.disableWhatsAppMessaging) {
+          console.log(`🔒 [DEV MODE] Interactive message blocked to ${to}: ${body}`);
+          return { message: 'blocked_in_development' };
+        }
+        
+        if (devConfig.development.logMessagesOnly) {
+          console.log(`📝 [DEV MODE] Would send interactive to ${to}: ${body} with buttons:`, buttons);
+          return { message: 'logged_in_development' };
+        }
+        
+        // Only allow test phone numbers in development
+        if (!this.testPhoneNumbers.includes(to)) {
+          console.log(`🚫 [DEV MODE] Phone number ${to} not in test list. Interactive message blocked.`);
+          return { message: 'blocked_not_test_number' };
+        }
+      }
+
       const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
         messaging_product: 'whatsapp',
         to: to,
@@ -206,7 +247,7 @@ Reply "PLAY" for a reminder.`;
         message = '🔒 Your first answer was locked in. Please wait until the next round.';
         break;
       case 'invalid_input':
-        message = '❓ I didn\'t get that. Use the answer buttons to play.';
+        message = '❓ Please use these commands only:\n\n🎮 PLAY - Get reminder for next game\n📝 JOIN - Join current game\n❓ HELP - Show this message';
         break;
       default:
         message = '❌ Something went wrong. Please try again.';

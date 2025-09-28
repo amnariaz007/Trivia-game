@@ -2,10 +2,54 @@ const { Game, User, Question, GamePlayer, PlayerAnswer } = require('../models');
 const queueService = require('./queueService');
 const rewardService = require('./rewardService');
 const whatsappService = require('./whatsappService');
+const CircuitBreaker = require('./circuitBreaker');
+const RedisGameState = require('./redisGameState');
 
 class GameService {
   constructor() {
-    this.activeGames = new Map(); // In-memory game state
+    this.activeGames = new Map(); // In-memory game state (fallback)
+    this.redisGameState = new RedisGameState(); // Redis game state (primary)
+    this.circuitBreaker = new CircuitBreaker();
+    console.log('✅ Circuit Breaker initialized for GameService');
+    console.log('✅ Redis Game State initialized for GameService');
+  }
+
+  /**
+   * Get game state (Redis first, then in-memory fallback)
+   * @param {string} gameId - Game ID
+   * @returns {Promise<Object|null>} Game state
+   */
+  async getGameState(gameId) {
+    // Try Redis first
+    if (this.redisGameState.isAvailable()) {
+      const redisState = await this.redisGameState.getGameState(gameId);
+      if (redisState) {
+        return redisState;
+      }
+    }
+    
+    // Fallback to in-memory
+    return this.activeGames.get(gameId) || null;
+  }
+
+  /**
+   * Set game state (Redis first, then in-memory fallback)
+   * @param {string} gameId - Game ID
+   * @param {Object} gameState - Game state
+   * @returns {Promise<boolean>} Success status
+   */
+  async setGameState(gameId, gameState) {
+    // Try Redis first
+    if (this.redisGameState.isAvailable()) {
+      const success = await this.redisGameState.setGameState(gameId, gameState);
+      if (success) {
+        return true;
+      }
+    }
+    
+    // Fallback to in-memory
+    this.activeGames.set(gameId, gameState);
+    return true;
   }
 
   // Restore active games from database on server startup
@@ -62,7 +106,8 @@ class GameService {
           questionTimer: null
         };
 
-        this.activeGames.set(game.id, gameState);
+        // Store in Redis as primary, in-memory as fallback
+        await this.setGameState(game.id, gameState);
         console.log(`✅ Restored game ${game.id} with ${gameState.players.length} players`);
       }
 
@@ -84,6 +129,10 @@ class GameService {
   // Start a new game
   async startGame(gameId) {
     try {
+      // Circuit breaker protection for game start
+      if (!this.circuitBreaker.canExecute('startGame')) {
+        throw new Error('Game service is temporarily unavailable due to high error rate');
+      }
       const game = await Game.findByPk(gameId, {
         include: [
           { model: Question, as: 'questions' },
@@ -138,7 +187,7 @@ class GameService {
         questionTimer: null
       };
 
-      this.activeGames.set(gameId, gameState);
+      await this.setGameState(gameId, gameState);
 
       // Send game start message to all players
       await this.sendGameStartMessage(gameId);
@@ -149,10 +198,15 @@ class GameService {
       }, 5000);
 
       console.log(`🎮 Game ${gameId} started with ${gameState.players.length} players`);
+      
+      // Record success in circuit breaker
+      this.circuitBreaker.recordSuccess('startGame');
       return gameState;
 
     } catch (error) {
       console.error('❌ Error starting game:', error);
+      // Record failure in circuit breaker
+      this.circuitBreaker.recordFailure('startGame');
       throw error;
     }
   }
@@ -160,8 +214,18 @@ class GameService {
   // Start a specific question
   async startQuestion(gameId, questionIndex) {
     try {
-      const gameState = this.activeGames.get(gameId);
+      // Use Redis lock to prevent race conditions
+      const lockKey = `game_lock:${gameId}:question:${questionIndex}`;
+      const lockAcquired = await this.acquireLock(lockKey, 30); // 30 second lock
+      
+      if (!lockAcquired) {
+        console.log(`⚠️ Could not acquire lock for game ${gameId} question ${questionIndex}, skipping`);
+        return;
+      }
+
+      const gameState = await this.getGameState(gameId);
       if (!gameState) {
+        await this.releaseLock(lockKey);
         throw new Error('Game not found');
       }
 
@@ -177,6 +241,9 @@ class GameService {
       const question = questions[questionIndex];
       gameState.currentQuestion = questionIndex;
       gameState.questionStartTime = new Date();
+      
+      // Save updated game state to Redis
+      await this.setGameState(gameId, gameState);
 
       // Reset player answer states for new question
       for (const player of players) {
@@ -211,28 +278,58 @@ class GameService {
 
       console.log(`❓ Question ${questionIndex + 1} started for game ${gameId}`);
 
+      // Release lock after successful completion
+      await this.releaseLock(lockKey);
+
     } catch (error) {
       console.error('❌ Error starting question:', error);
+      // Release lock on error
+      await this.releaseLock(lockKey);
       throw error;
     }
   }
 
-  // Start question timer
+  // Start question timer (single synchronized timer per question)
   async startQuestionTimer(gameId, questionIndex, totalSeconds) {
-    const gameState = this.activeGames.get(gameId);
+    const gameState = await this.getGameState(gameId);
     if (!gameState) return;
+
+    // Clear any existing timer for this question
+    if (gameState.questionTimer) {
+      console.log(`🔄 Clearing existing timer for question ${questionIndex + 1}`);
+      clearInterval(gameState.questionTimer);
+      gameState.questionTimer = null;
+    }
+
+    // Check if timer is already running for this question
+    const timerKey = `timer_${gameId}_${questionIndex}`;
+    if (gameState.activeTimers && gameState.activeTimers.has(timerKey)) {
+      console.log(`⏰ Timer already running for question ${questionIndex + 1}, skipping`);
+      return;
+    }
+
+    // Initialize active timers set if not exists
+    if (!gameState.activeTimers) {
+      gameState.activeTimers = new Set();
+    }
+
+    // Mark this timer as active
+    gameState.activeTimers.add(timerKey);
+    console.log(`⏰ Starting synchronized timer for question ${questionIndex + 1}`);
 
     let timeLeft = totalSeconds;
     
     // Send initial timer
     await this.sendTimerUpdate(gameId, questionIndex, timeLeft);
 
-    // Timer countdown
+    // Single synchronized timer countdown
     const timer = setInterval(async () => {
       timeLeft--;
       
       if (timeLeft <= 0) {
         clearInterval(timer);
+        gameState.activeTimers.delete(timerKey);
+        gameState.questionTimer = null;
         console.log(`⏰ Question ${questionIndex + 1} time expired`);
         await this.handleQuestionTimeout(gameId, questionIndex);
         return;
@@ -253,7 +350,7 @@ class GameService {
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
       console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations`);
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) {
         console.log(`❌ Game state not found for ${gameId} during timeout`);
         return;
@@ -281,7 +378,7 @@ class GameService {
       }
 
       // Send results to all players (this will handle game continuation)
-      await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
+      await this.processQuestionResultsWithLock(gameId, questionIndex, correctAnswer);
 
     } catch (error) {
       console.error('❌ Error handling question timeout:', error);
@@ -293,8 +390,18 @@ class GameService {
     try {
       console.log(`🎯 handlePlayerAnswer called: gameId=${gameId}, phone=${phoneNumber}, answer="${answer}"`);
       
-      const gameState = this.activeGames.get(gameId);
+      // Use Redis lock to prevent race conditions when multiple players answer simultaneously
+      const lockKey = `game_lock:${gameId}:answer:${phoneNumber}`;
+      const lockAcquired = await this.acquireLock(lockKey, 10); // 10 second lock
+      
+      if (!lockAcquired) {
+        console.log(`⚠️ Could not acquire lock for player ${phoneNumber} in game ${gameId}, skipping`);
+        return;
+      }
+
+      const gameState = await this.getGameState(gameId);
       if (!gameState) {
+        await this.releaseLock(lockKey);
         console.log(`❌ Game not found: ${gameId}`);
         throw new Error('Game not found or not active');
       }
@@ -312,18 +419,44 @@ class GameService {
         throw new Error('Player not active in game');
       }
 
-      if (player.answer) {
-        console.log(`❌ Player already answered: ${player.answer}`);
-        throw new Error('Player already answered this question');
+      // Create answer lock key to prevent race conditions
+      const answerLockKey = `player_answer:${gameId}:${phoneNumber}:${gameState.currentQuestion}`;
+      
+      // Acquire lock to prevent multiple answers
+      const answerLockAcquired = await queueService.acquireLock(answerLockKey, 5);
+      if (!answerLockAcquired) {
+        console.log(`🔒 Answer lock not acquired for ${phoneNumber}, skipping duplicate answer`);
+        return { message: 'duplicate_answer_skipped' };
       }
+
+      try {
+        // Double-check if player already answered (with lock)
+        if (player.answer) {
+          console.log(`❌ Player already answered: ${player.answer}`);
+          return {
+            correct: player.answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim(),
+            correctAnswer: currentQuestion.correct_answer,
+            alreadyAnswered: true
+          };
+        }
 
       // Record the answer
       player.answer = answer;
       player.answerTime = Date.now();
       console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
       
-      // Don't clear the timer - let it expire naturally to process results
-      console.log(`⏰ Player ${player.user.nickname} answered, timer will continue until expiration`);
+      // Save updated game state to Redis
+      await this.setGameState(gameId, gameState);
+      
+      // Immediately send confirmation to player that their answer is locked
+      await queueService.addMessage('send_message', {
+        to: player.user.whatsapp_number,
+        message: '✅ Answer locked in! Please wait until the next round.',
+        gameId: gameId,
+        messageType: 'answer_confirmation'
+      });
+      
+      console.log(`⏰ Player ${player.user.nickname} answered, timer will continue for other players only`);
 
       const currentQuestion = gameState.questions[gameState.currentQuestion];
       const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
@@ -362,19 +495,33 @@ class GameService {
       // For correct answers, wait for the timer to expire
       if (!isCorrect) {
         console.log(`🎯 Player answered incorrectly, processing results immediately`);
-        // Player answered incorrectly, process results immediately
-        setTimeout(() => {
-          this.sendQuestionResults(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
+        // Player answered incorrectly, process results immediately with lock
+        setTimeout(async () => {
+          // Check if results are already being processed
+          const queueService = require('./queueService');
+          const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
+          const isLocked = await queueService.isLocked(lockKey);
+          
+          if (!isLocked) {
+            await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
+          } else {
+            console.log(`🔒 Question results already being processed, skipping duplicate call`);
+          }
         }, 2000); // 2 second delay to show the "locked in" message
       } else {
         console.log(`✅ Player answered correctly, waiting for timer to expire`);
         // Player answered correctly, wait for the timer to expire naturally
       }
 
-      return {
-        correct: answer === gameState.questions[gameState.currentQuestion].correct_answer,
-        correctAnswer: gameState.questions[gameState.currentQuestion].correct_answer
-      };
+        return {
+          correct: answer === gameState.questions[gameState.currentQuestion].correct_answer,
+          correctAnswer: gameState.questions[gameState.currentQuestion].correct_answer
+        };
+
+      } finally {
+        // Always release the answer lock
+        await queueService.releaseLock(answerLockKey);
+      }
 
     } catch (error) {
       console.error('❌ Error handling player answer:', error);
@@ -385,7 +532,7 @@ class GameService {
   // Send question to all alive players
   async sendQuestionToPlayers(gameId, question) {
     try {
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) return;
 
       const options = [question.option_a, question.option_b, question.option_c, question.option_d];
@@ -398,13 +545,16 @@ class GameService {
             questionText: question.question_text,
             options,
             questionNumber,
-            correctAnswer: question.correct_answer
+            correctAnswer: question.correct_answer,
+            gameId: gameId // Add gameId for deduplication
           });
         } else {
           // Send spectator update to eliminated players
           await queueService.addMessage('send_message', {
             to: phoneNumber,
-            message: `👀 Q${questionNumber}: ${question.question_text}\n\nYou're watching as a spectator.`
+            message: `👀 Q${questionNumber}: ${question.question_text}\n\nYou're watching as a spectator.`,
+            gameId: gameId,
+            messageType: 'spectator'
           });
         }
       }
@@ -417,7 +567,7 @@ class GameService {
   // Send timer update
   async sendTimerUpdate(gameId, questionIndex, timeLeft) {
     try {
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) return;
 
       const { questions, players } = gameState;
@@ -431,10 +581,16 @@ class GameService {
           const timerBar = this.generateTimerBar(timeLeft);
           const message = `⏰ Time left: ${timerBar} ${timeLeft}s`;
           
+          console.log(`⏰ Sending timer update to ${player.user.nickname} (${player.user.whatsapp_number}): ${timeLeft}s - hasAnswer: ${!!player.answer}`);
+          
           await queueService.addMessage('send_message', {
             to: player.user.whatsapp_number,
-            message: message
+            message: message,
+            gameId: gameId,
+            messageType: 'timer_update'
           });
+        } else {
+          console.log(`⏰ Skipping timer update for ${player.user.nickname} - status: ${player.status}, hasAnswer: ${!!player.answer}`);
         }
       }
 
@@ -446,7 +602,7 @@ class GameService {
   // Handle question timeout - eliminate players who didn't answer
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) return;
 
       const { players, questions } = gameState;
@@ -517,7 +673,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
     try {
       console.log(`⏰ Handling player elimination for ${phoneNumber} in game ${gameId}, reason: ${reason}`);
       
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) {
         console.log(`❌ Game ${gameId} not found in active games`);
         return;
@@ -579,10 +735,38 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
     }
   }
 
+  // Process question results with Redis lock to prevent race conditions
+  async processQuestionResultsWithLock(gameId, questionIndex, correctAnswer) {
+    const queueService = require('./queueService');
+    const lockKey = `question_results:${gameId}:${questionIndex}`;
+    
+    try {
+      // Try to acquire lock
+      const lockAcquired = await queueService.acquireLock(lockKey, 30); // 30 second TTL
+      
+      if (!lockAcquired) {
+        console.log(`🔒 Question results already being processed for game ${gameId}, question ${questionIndex + 1}`);
+        return; // Another process is already handling this
+      }
+      
+      console.log(`🔓 Acquired lock for question results: ${gameId}:${questionIndex}`);
+      
+      // Process the results
+      await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
+      
+    } catch (error) {
+      console.error('❌ Error in processQuestionResultsWithLock:', error);
+    } finally {
+      // Always release the lock
+      await queueService.releaseLock(lockKey);
+      console.log(`🔓 Released lock for question results: ${gameId}:${questionIndex}`);
+    }
+  }
+
   // Send question results and handle eliminations
   async sendQuestionResults(gameId, questionIndex, correctAnswer) {
     try {
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) return;
 
       const { players, questions } = gameState;
@@ -656,19 +840,113 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
     }
   }
 
+  // Force end game (admin emergency function)
+  async forceEndGame(gameId) {
+    try {
+      console.log(`🚨 FORCE ENDING GAME: ${gameId} (Admin Emergency)`);
+      
+      const gameState = await this.getGameState(gameId);
+      if (!gameState) {
+        console.log(`⚠️ Game state not found for: ${gameId}, checking database...`);
+        
+        // If no active game state, just update database status
+        const game = await Game.findByPk(gameId);
+        if (game && game.status === 'in_progress') {
+          await game.update({ status: 'finished' });
+          console.log(`✅ Database updated: Game ${gameId} marked as finished`);
+          return { 
+            message: 'Game ended (no active state found)', 
+            winners: [], 
+            winnerCount: 0 
+          };
+        }
+        
+        throw new Error('Game not found or not in progress');
+      }
+
+      // Immediately stop all timers
+      if (gameState.questionTimer) {
+        clearInterval(gameState.questionTimer);
+        gameState.questionTimer = null;
+        console.log(`⏰ Emergency: Cleared question timer for game ${gameId}`);
+      }
+      
+      if (gameState.activeTimers) {
+        gameState.activeTimers.clear();
+        console.log(`⏰ Emergency: Cleared all active timers for game ${gameId}`);
+      }
+
+      // Send emergency game end message to all players
+      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+      const queueService = require('./queueService');
+      
+      for (const player of alivePlayers) {
+        await queueService.addMessage('send_message', {
+          to: player.user.whatsapp_number,
+          message: `🚨 GAME ENDED BY ADMIN\n\n❌ This game has been terminated by the administrator.\n\n💰 Prize pool: $${gameState.game.prize_pool}\n🎮 Game: ${gameId.slice(0, 8)}...\n\nReply "PLAY" for the next game.`,
+          gameId: gameId,
+          messageType: 'emergency_end'
+        });
+      }
+
+      // Clear deduplication keys
+      await queueService.clearGameDeduplication(gameId);
+      
+      // Remove from active games
+      this.activeGames.delete(gameId);
+      console.log(`🧹 Emergency: Game state removed for: ${gameId}`);
+
+      // Update database status
+      const game = await Game.findByPk(gameId);
+      if (game) {
+        await game.update({ status: 'finished' });
+        console.log(`✅ Database updated: Game ${gameId} marked as finished`);
+      }
+
+      console.log(`🚨 FORCE END COMPLETE: Game ${gameId} terminated by admin`);
+      
+      return { 
+        message: 'Game force ended by admin', 
+        winners: alivePlayers.map(p => p.user.nickname), 
+        winnerCount: alivePlayers.length 
+      };
+
+    } catch (error) {
+      console.error('❌ Error force ending game:', error);
+      throw error;
+    }
+  }
+
   // End game
   async endGame(gameId) {
     try {
       console.log(`🏁 Ending game: ${gameId}`);
       
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) {
         console.error(`❌ Game state not found for: ${gameId}`);
         return;
       }
 
-      // Clean up game state
-      console.log(`🧹 Cleaning up game state for: ${gameId}`);
+      // Clean up timers and game state
+      console.log(`🧹 Cleaning up timers and game state for: ${gameId}`);
+      
+      // Clear any active timers
+      if (gameState.questionTimer) {
+        clearInterval(gameState.questionTimer);
+        console.log(`⏰ Cleared question timer for game ${gameId}`);
+      }
+      
+      // Clear active timers set
+      if (gameState.activeTimers) {
+        gameState.activeTimers.clear();
+        console.log(`⏰ Cleared active timers set for game ${gameId}`);
+      }
+      
+      // Clear deduplication keys for this game
+      const queueService = require('./queueService');
+      await queueService.clearGameDeduplication(gameId);
+      
       this.activeGames.delete(gameId);
       console.log(`🧹 Game state cleaned up for: ${gameId}`);
 
@@ -692,7 +970,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
   // Send game start message
   async sendGameStartMessage(gameId) {
     try {
-      const gameState = this.activeGames.get(gameId);
+      const gameState = await this.getGameState(gameId);
       if (!gameState) return;
 
       for (const player of gameState.players) {
@@ -774,6 +1052,65 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       return null;
     }
   }
+
+  // Cleanup all timers (for graceful shutdown)
+  cleanupAllTimers() {
+    console.log('🧹 Cleaning up all game timers...');
+    
+    for (const [gameId, gameState] of this.activeGames) {
+      if (gameState.questionTimer) {
+        clearInterval(gameState.questionTimer);
+        console.log(`⏰ Cleared timer for game ${gameId}`);
+      }
+      
+      if (gameState.activeTimers) {
+        gameState.activeTimers.clear();
+        console.log(`⏰ Cleared active timers for game ${gameId}`);
+      }
+    }
+    
+    console.log('✅ All timers cleaned up');
+  }
+
+  /**
+   * Acquire a Redis lock to prevent race conditions
+   * @param {string} lockKey - Lock key
+   * @param {number} ttl - Time to live in seconds
+   * @returns {Promise<boolean>} Whether lock was acquired
+   */
+  async acquireLock(lockKey, ttl = 30) {
+    if (!this.redisGameState.isAvailable()) {
+      return true; // No Redis, allow operation
+    }
+
+    try {
+      const result = await this.redisGameState.redis.set(lockKey, 'locked', 'EX', ttl, 'NX');
+      return result === 'OK';
+    } catch (error) {
+      console.error('❌ Error acquiring lock:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Release a Redis lock
+   * @param {string} lockKey - Lock key
+   * @returns {Promise<boolean>} Whether lock was released
+   */
+  async releaseLock(lockKey) {
+    if (!this.redisGameState.isAvailable()) {
+      return true; // No Redis, allow operation
+    }
+
+    try {
+      await this.redisGameState.redis.del(lockKey);
+      return true;
+    } catch (error) {
+      console.error('❌ Error releasing lock:', error);
+      return false;
+    }
+  }
 }
 
 module.exports = new GameService();
+

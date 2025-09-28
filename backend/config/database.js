@@ -1,10 +1,26 @@
 const { Sequelize } = require('sequelize');
 
+// Smart database configuration that works for both local and production
+const isLocalDatabase = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost');
+
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   protocol: 'postgres',
   logging: false, // Disable SQL query logging
-  dialectOptions: {
+  define: {
+    underscored: true, // Always use snake_case to match database
+    timestamps: true
+  },
+      // Connection pool configuration for 1000+ users
+      pool: {
+        max: 100,       // Maximum 100 connections in pool (increased for 1000 users)
+        min: 20,        // Always keep 20 connections ready
+        acquire: 60000, // Wait max 60 seconds to get a connection
+        idle: 30000,    // Close idle connections after 30 seconds
+        evict: 5000,    // Check for idle connections every 5 seconds
+        handleDisconnects: true // Automatically reconnect on connection loss
+      },
+  dialectOptions: isLocalDatabase ? {} : {
     ssl: {
       require: true,
       rejectUnauthorized: false // for Railway or other managed DBs
@@ -18,6 +34,11 @@ const testConnection = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
+    console.log('🔗 Connection pool configured for 200-500 users:');
+    console.log('   - Max connections: 50');
+    console.log('   - Min connections: 10');
+    console.log('   - Acquire timeout: 30s');
+    console.log('   - Idle timeout: 10s');
   } catch (error) {
     console.error('❌ Unable to connect to the database:', error);
     process.exit(1);

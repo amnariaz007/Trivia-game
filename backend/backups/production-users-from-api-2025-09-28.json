@@ -1,0 +1,799 @@
+{
+  "extracted_at": "2025-09-28T10:56:42.348Z",
+  "source": "production_api",
+  "total_users": 99,
+  "users": [
+    {
+      "id": "b432ad82-637f-4056-88d0-dc1f225ad7cd",
+      "nickname": "Hi ",
+      "whatsapp_number": "16462890996",
+      "is_active": true,
+      "createdAt": "9/28/2025, 6:30:07 AM",
+      "last_activity": "9/28/2025, 6:30:07 AM"
+    },
+    {
+      "id": "fffec34b-c428-45b5-bf50-d2a9985a2da5",
+      "nickname": "Eli Klein",
+      "whatsapp_number": "14109610309",
+      "is_active": true,
+      "createdAt": "9/28/2025, 6:06:36 AM",
+      "last_activity": "9/28/2025, 6:06:36 AM"
+    },
+    {
+      "id": "675d51e0-dcef-4e8e-9523-949a0604357c",
+      "nickname": "Shua Osina",
+      "whatsapp_number": "13477648840",
+      "is_active": true,
+      "createdAt": "9/28/2025, 3:38:07 AM",
+      "last_activity": "9/28/2025, 3:38:07 AM"
+    },
+    {
+      "id": "81edc077-2966-43b0-a0df-fec1fd801277",
+      "nickname": "Blimi",
+      "whatsapp_number": "19293767175",
+      "is_active": true,
+      "createdAt": "9/28/2025, 2:38:08 AM",
+      "last_activity": "9/28/2025, 2:38:08 AM"
+    },
+    {
+      "id": "75b7c925-ccfb-4306-b2df-82059179e950",
+      "nickname": "Rf",
+      "whatsapp_number": "19178372715",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:59:05 AM",
+      "last_activity": "9/28/2025, 1:59:05 AM"
+    },
+    {
+      "id": "8dd2bb2e-ba56-4416-ac59-7b44a8b73415",
+      "nickname": "S.E.S",
+      "whatsapp_number": "18452700508",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:40:41 AM",
+      "last_activity": "9/28/2025, 1:40:41 AM"
+    },
+    {
+      "id": "4baf739c-4a4b-47d5-8182-67bd63651d68",
+      "nickname": "Miriam",
+      "whatsapp_number": "15163958369",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:37:14 AM",
+      "last_activity": "9/28/2025, 1:37:14 AM"
+    },
+    {
+      "id": "8263abaf-2cf4-4686-95b6-c0365a91e647",
+      "nickname": "-je",
+      "whatsapp_number": "12016477090",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:35:02 AM",
+      "last_activity": "9/28/2025, 1:35:02 AM"
+    },
+    {
+      "id": "66d54b66-f942-4d10-a3b4-efb4a2de68e8",
+      "nickname": "Joey Katz",
+      "whatsapp_number": "12015648033",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:34:25 AM",
+      "last_activity": "9/28/2025, 1:34:25 AM"
+    },
+    {
+      "id": "1daf63f9-5f62-4a47-af33-36be245c40e8",
+      "nickname": "Eytan Aryeh",
+      "whatsapp_number": "15165674288",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:34:02 AM",
+      "last_activity": "9/28/2025, 1:34:02 AM"
+    },
+    {
+      "id": "e2edf42b-35df-4d96-8ea5-2069c82809e7",
+      "nickname": "Hudi",
+      "whatsapp_number": "19175614194",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:25:21 AM",
+      "last_activity": "9/28/2025, 1:25:21 AM"
+    },
+    {
+      "id": "84273092-bcb5-41f1-be1c-8838b7bd25a5",
+      "nickname": "Aharon Shields",
+      "whatsapp_number": "12403516211",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:23:55 AM",
+      "last_activity": "9/28/2025, 1:23:55 AM"
+    },
+    {
+      "id": "98111eaa-ce5a-4e1a-bec6-7aba55e49766",
+      "nickname": "The Sports Status",
+      "whatsapp_number": "15163711220",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:21:20 AM",
+      "last_activity": "9/28/2025, 1:21:20 AM"
+    },
+    {
+      "id": "a1814aeb-36af-41b2-bd98-d8625d0c4789",
+      "nickname": "Frady",
+      "whatsapp_number": "16467407185",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:18:47 AM",
+      "last_activity": "9/28/2025, 1:18:47 AM"
+    },
+    {
+      "id": "856906c4-df72-46d4-b562-28d675c7e681",
+      "nickname": "Rochel Golovan",
+      "whatsapp_number": "13474461918",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:13:34 AM",
+      "last_activity": "9/28/2025, 1:13:34 AM"
+    },
+    {
+      "id": "c61f543b-0705-4f9b-a098-a6b598103c74",
+      "nickname": "DJ",
+      "whatsapp_number": "19739084045",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:04:19 AM",
+      "last_activity": "9/28/2025, 1:04:19 AM"
+    },
+    {
+      "id": "a7d47283-0581-4094-b04b-b8e740326a37",
+      "nickname": "S.R.",
+      "whatsapp_number": "17322675297",
+      "is_active": true,
+      "createdAt": "9/28/2025, 1:01:19 AM",
+      "last_activity": "9/28/2025, 1:01:19 AM"
+    },
+    {
+      "id": "d97ef004-e28d-4d05-acb6-3a279836c8a4",
+      "nickname": "Esti Deutsch",
+      "whatsapp_number": "19175886419",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:59:38 AM",
+      "last_activity": "9/28/2025, 12:59:38 AM"
+    },
+    {
+      "id": "9d409dc5-9193-4186-8091-bb44a912a4dd",
+      "nickname": "Sara Rosenberg",
+      "whatsapp_number": "18459253715",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:54:22 AM",
+      "last_activity": "9/28/2025, 12:54:22 AM"
+    },
+    {
+      "id": "44d9b4e8-fd40-4f9e-94d8-a02f503587ec",
+      "nickname": "Shaina Sarah Schapiro",
+      "whatsapp_number": "17187445836",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:51:53 AM",
+      "last_activity": "9/28/2025, 12:51:53 AM"
+    },
+    {
+      "id": "cf082889-34b2-42d6-b818-032ffcec6fb3",
+      "nickname": "M. Silber",
+      "whatsapp_number": "19174474418",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:51:51 AM",
+      "last_activity": "9/28/2025, 12:51:51 AM"
+    },
+    {
+      "id": "4e77d14f-f24c-4413-8191-6f553668f382",
+      "nickname": "Joel Simpson",
+      "whatsapp_number": "12158509299",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:49:50 AM",
+      "last_activity": "9/28/2025, 12:49:50 AM"
+    },
+    {
+      "id": "323577bc-e78d-4865-a89b-e368dcd3f186",
+      "nickname": "Jason Cutler",
+      "whatsapp_number": "18472195798",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:49:24 AM",
+      "last_activity": "9/28/2025, 12:49:24 AM"
+    },
+    {
+      "id": "d988c15d-2a1d-47da-8eae-3c5e6a59434d",
+      "nickname": "Rachael Zisu",
+      "whatsapp_number": "17186371086",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:48:57 AM",
+      "last_activity": "9/28/2025, 12:48:57 AM"
+    },
+    {
+      "id": "0a60db27-591e-4925-8e47-a3f73a2cf13b",
+      "nickname": "Renee (Wietschner) Cutler",
+      "whatsapp_number": "15167124557",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:47:28 AM",
+      "last_activity": "9/28/2025, 12:47:28 AM"
+    },
+    {
+      "id": "cb35aa27-ce88-49d5-a42c-2967584fa12d",
+      "nickname": "Yehuda Hartman",
+      "whatsapp_number": "13474156546",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:46:52 AM",
+      "last_activity": "9/28/2025, 12:46:52 AM"
+    },
+    {
+      "id": "3c1066fd-4947-421b-b147-390c3fb8fbd8",
+      "nickname": "Kosher Youtube Shorts",
+      "whatsapp_number": "19297459659",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:44:52 AM",
+      "last_activity": "9/28/2025, 12:44:52 AM"
+    },
+    {
+      "id": "58fb0fec-552e-4888-bf90-fa9e3b243cd6",
+      "nickname": "Yoni Schwartz",
+      "whatsapp_number": "12015667446",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:43:49 AM",
+      "last_activity": "9/28/2025, 12:43:49 AM"
+    },
+    {
+      "id": "63656b63-e741-4eb7-9bf9-ec1e95e9357e",
+      "nickname": "Ana Birn",
+      "whatsapp_number": "15168086942",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:43:14 AM",
+      "last_activity": "9/28/2025, 12:43:14 AM"
+    },
+    {
+      "id": "3ff7ed6b-80fc-4715-bb1c-e2bf60908481",
+      "nickname": "Chatz (Yechiel Zvi)",
+      "whatsapp_number": "13473741780",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:42:55 AM",
+      "last_activity": "9/28/2025, 12:42:55 AM"
+    },
+    {
+      "id": "711a5312-b00f-40b4-9a1a-d1d16e75613f",
+      "nickname": "Esti",
+      "whatsapp_number": "13477969773",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:42:34 AM",
+      "last_activity": "9/28/2025, 12:42:34 AM"
+    },
+    {
+      "id": "2630b83f-5947-4275-beca-cd302b229251",
+      "nickname": "Aaron Fishkind",
+      "whatsapp_number": "18453233346",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:42:31 AM",
+      "last_activity": "9/28/2025, 12:42:31 AM"
+    },
+    {
+      "id": "ee31a899-67c4-4c1c-bd62-da30693a036d",
+      "nickname": "Dina Yakubov",
+      "whatsapp_number": "17184735777",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:39:02 AM",
+      "last_activity": "9/28/2025, 12:39:02 AM"
+    },
+    {
+      "id": "0f1e2f31-5779-494b-9bb7-c015633dece8",
+      "nickname": "Yehuda Benasaraf",
+      "whatsapp_number": "13475785305",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:37:02 AM",
+      "last_activity": "9/28/2025, 12:37:02 AM"
+    },
+    {
+      "id": "d4e6ff48-1290-48e0-b905-095a7288c21a",
+      "nickname": "Tova",
+      "whatsapp_number": "15163616118",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:36:43 AM",
+      "last_activity": "9/28/2025, 12:36:43 AM"
+    },
+    {
+      "id": "2eecea8f-4ddd-4876-8644-01185de43be8",
+      "nickname": "Moshe Leib",
+      "whatsapp_number": "13476095788",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:35:51 AM",
+      "last_activity": "9/28/2025, 12:35:51 AM"
+    },
+    {
+      "id": "093dd26c-d69e-496d-b6ff-c9a9cf1b4cb4",
+      "nickname": "Yair Adler",
+      "whatsapp_number": "17324256580",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:30:45 AM",
+      "last_activity": "9/28/2025, 12:30:45 AM"
+    },
+    {
+      "id": "33037667-ab62-4c28-8dc7-d9d9205ef1a8",
+      "nickname": "Meir Stolov FL17/HSF-S105",
+      "whatsapp_number": "12146871276",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:30:27 AM",
+      "last_activity": "9/28/2025, 12:30:27 AM"
+    },
+    {
+      "id": "05deb27e-f26b-4532-8065-0f9525c52187",
+      "nickname": "Gaby Kesten",
+      "whatsapp_number": "13473617478",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:26:06 AM",
+      "last_activity": "9/28/2025, 12:26:06 AM"
+    },
+    {
+      "id": "6184762b-56ac-42ca-9aa1-0a7f990d6191",
+      "nickname": "Alexander Malek",
+      "whatsapp_number": "13475450090",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:25:48 AM",
+      "last_activity": "9/28/2025, 12:25:48 AM"
+    },
+    {
+      "id": "accfb127-24c7-45cd-baa5-beb4787dad8c",
+      "nickname": "Ephraim Taber",
+      "whatsapp_number": "18455581358",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:25:36 AM",
+      "last_activity": "9/28/2025, 12:25:36 AM"
+    },
+    {
+      "id": "b56ffd29-ee34-47a7-81ef-e2ac40149951",
+      "nickname": "Tova Rosenstock",
+      "whatsapp_number": "18456424994",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:24:56 AM",
+      "last_activity": "9/28/2025, 12:24:56 AM"
+    },
+    {
+      "id": "37b1bbf3-c9f9-4b8e-8cff-0fc5a047dbfe",
+      "nickname": "Miriam Berkowitz",
+      "whatsapp_number": "18452743936",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:23:06 AM",
+      "last_activity": "9/28/2025, 12:23:06 AM"
+    },
+    {
+      "id": "2f30b053-4d8f-456f-9112-78d425ef7115",
+      "nickname": "Sammy Lekowsky",
+      "whatsapp_number": "15154414338",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:22:31 AM",
+      "last_activity": "9/28/2025, 12:22:31 AM"
+    },
+    {
+      "id": "704ad8c7-98b7-467f-abff-d5d1bcbb6dc6",
+      "nickname": "Aryeh Kugel",
+      "whatsapp_number": "12014666148",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:22:07 AM",
+      "last_activity": "9/28/2025, 12:22:07 AM"
+    },
+    {
+      "id": "5b850d1a-37fb-45ab-a6bf-f5a150a0921a",
+      "nickname": "Chavi Schmelczer",
+      "whatsapp_number": "13474235601",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:21:57 AM",
+      "last_activity": "9/28/2025, 12:21:57 AM"
+    },
+    {
+      "id": "b11b704a-a24b-4d51-b231-f2bd81472adc",
+      "nickname": "Naft",
+      "whatsapp_number": "15166757017",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:19:54 AM",
+      "last_activity": "9/28/2025, 12:19:54 AM"
+    },
+    {
+      "id": "744967e6-433e-4036-b2ca-9b9a1de9b0a9",
+      "nickname": "Devorah",
+      "whatsapp_number": "13472847279",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:18:04 AM",
+      "last_activity": "9/28/2025, 12:18:04 AM"
+    },
+    {
+      "id": "e79e4053-1506-43ec-99a5-e1aca83c0cf3",
+      "nickname": "Yitz Matitia",
+      "whatsapp_number": "12163873894",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:17:24 AM",
+      "last_activity": "9/28/2025, 12:17:24 AM"
+    },
+    {
+      "id": "0e7801d5-3dbf-4ef7-93cb-71be89d2072d",
+      "nickname": "Miri",
+      "whatsapp_number": "13476285335",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:17:09 AM",
+      "last_activity": "9/28/2025, 12:17:09 AM"
+    },
+    {
+      "id": "f5ec0764-f21c-4e38-95d9-0fdeee2e5dd4",
+      "nickname": "Aryeh Goldress",
+      "whatsapp_number": "19176971150",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:17:01 AM",
+      "last_activity": "9/28/2025, 12:17:01 AM"
+    },
+    {
+      "id": "0f62dee5-e624-48a3-ae91-5bedb9b08535",
+      "nickname": "Yair Levitz",
+      "whatsapp_number": "15168175906",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:16:26 AM",
+      "last_activity": "9/28/2025, 12:16:26 AM"
+    },
+    {
+      "id": "9dafb177-caf1-4f46-90dc-c41cd3cd2dc6",
+      "nickname": "Adam Bromberg",
+      "whatsapp_number": "12014469565",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:16:03 AM",
+      "last_activity": "9/28/2025, 12:16:03 AM"
+    },
+    {
+      "id": "831c6639-056f-444c-ad46-41683f7bc028",
+      "nickname": "Leiby M",
+      "whatsapp_number": "17189381948",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:16:03 AM",
+      "last_activity": "9/28/2025, 12:16:03 AM"
+    },
+    {
+      "id": "0276c147-95ab-426b-883d-c92352ff1933",
+      "nickname": "Addictive Ads",
+      "whatsapp_number": "17325038255",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:15:59 AM",
+      "last_activity": "9/28/2025, 12:15:59 AM"
+    },
+    {
+      "id": "7fe2d126-bf97-4ea0-a70b-db48bcc07585",
+      "nickname": "N Mintz",
+      "whatsapp_number": "13475765018",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:15:58 AM",
+      "last_activity": "9/28/2025, 12:15:58 AM"
+    },
+    {
+      "id": "34808638-5acb-42d4-b506-23aed3f677c0",
+      "nickname": "Ja",
+      "whatsapp_number": "13474095770",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:15:52 AM",
+      "last_activity": "9/28/2025, 12:15:52 AM"
+    },
+    {
+      "id": "05ca54ef-0a60-4a39-9642-f04e3e1a38cf",
+      "nickname": "YW",
+      "whatsapp_number": "15166686817",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:15:51 AM",
+      "last_activity": "9/28/2025, 12:15:51 AM"
+    },
+    {
+      "id": "e05d3d0a-d417-46a3-8cc3-6dc1b32ca523",
+      "nickname": "MMP",
+      "whatsapp_number": "16464642011",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:14:32 AM",
+      "last_activity": "9/28/2025, 12:14:32 AM"
+    },
+    {
+      "id": "bf3c16b8-8a41-4841-a102-05ebe5f3fa67",
+      "nickname": "Esther Gelkopf",
+      "whatsapp_number": "14162685546",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:14:22 AM",
+      "last_activity": "9/28/2025, 12:14:22 AM"
+    },
+    {
+      "id": "851ae93f-83d1-454e-8aeb-9a756ee563ac",
+      "nickname": "Akiva",
+      "whatsapp_number": "18455878519",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:12:26 AM",
+      "last_activity": "9/28/2025, 12:12:26 AM"
+    },
+    {
+      "id": "8c9354ac-1021-495c-9369-8de4de77311a",
+      "nickname": "YSA News",
+      "whatsapp_number": "18049721598",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:11:43 AM",
+      "last_activity": "9/28/2025, 12:11:43 AM"
+    },
+    {
+      "id": "04bce961-184b-4e29-a93e-3f31634ae1e9",
+      "nickname": "Chaim Horovitz",
+      "whatsapp_number": "17327034849",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:11:24 AM",
+      "last_activity": "9/28/2025, 12:11:24 AM"
+    },
+    {
+      "id": "a4c4e6f5-cd1f-45d1-9132-5f28592fef22",
+      "nickname": "KK",
+      "whatsapp_number": "17328647376",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:08:46 AM",
+      "last_activity": "9/28/2025, 12:08:46 AM"
+    },
+    {
+      "id": "45f7e4a6-ed77-473a-b4e7-5fe7e71cfa07",
+      "nickname": "Faygie Z",
+      "whatsapp_number": "17325035901",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:07:19 AM",
+      "last_activity": "9/28/2025, 12:07:19 AM"
+    },
+    {
+      "id": "56b681f7-a5ea-4e3b-97a5-92405d4e4bc1",
+      "nickname": "Baruch Weissman",
+      "whatsapp_number": "15162826832",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:06:06 AM",
+      "last_activity": "9/28/2025, 12:06:06 AM"
+    },
+    {
+      "id": "74bbc3e4-7ca8-4ba2-b42a-e014ada27ea6",
+      "nickname": "Izzy Benoliel",
+      "whatsapp_number": "13474848943",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:04:49 AM",
+      "last_activity": "9/28/2025, 12:04:49 AM"
+    },
+    {
+      "id": "1fcb9fa5-d715-4e89-b686-224b1ae580d7",
+      "nickname": "S Tendler",
+      "whatsapp_number": "14433865210",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:04:12 AM",
+      "last_activity": "9/28/2025, 12:04:12 AM"
+    },
+    {
+      "id": "c75057ec-c615-418f-af74-0ab0fa0c5cb5",
+      "nickname": "YY",
+      "whatsapp_number": "13015690291",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:04:08 AM",
+      "last_activity": "9/28/2025, 12:04:08 AM"
+    },
+    {
+      "id": "a0ce352c-9d36-424f-b8c5-873bdb785bab",
+      "nickname": "Chaya F",
+      "whatsapp_number": "17324738893",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:02:59 AM",
+      "last_activity": "9/28/2025, 12:02:59 AM"
+    },
+    {
+      "id": "3c492093-90b8-4690-8235-70b05ba39249",
+      "nickname": "Yoni",
+      "whatsapp_number": "18456085906",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:02:43 AM",
+      "last_activity": "9/28/2025, 12:02:43 AM"
+    },
+    {
+      "id": "9bb479ce-2439-4d39-bd39-d4a36339ad4e",
+      "nickname": "Dovid Gottlieb",
+      "whatsapp_number": "13476035785",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:02:29 AM",
+      "last_activity": "9/28/2025, 12:02:29 AM"
+    },
+    {
+      "id": "7d13119a-8ee2-41ae-b245-363ace5b4bac",
+      "nickname": "Rosie Levy",
+      "whatsapp_number": "17328598793",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:02:28 AM",
+      "last_activity": "9/28/2025, 12:02:28 AM"
+    },
+    {
+      "id": "f4b796af-d261-4178-a830-114f33f27087",
+      "nickname": "TM",
+      "whatsapp_number": "13476420679",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:00:10 AM",
+      "last_activity": "9/28/2025, 12:00:10 AM"
+    },
+    {
+      "id": "4bff13ab-5da3-4e51-912e-4fcfd745909d",
+      "nickname": "Ahron",
+      "whatsapp_number": "16676770871",
+      "is_active": true,
+      "createdAt": "9/28/2025, 12:00:02 AM",
+      "last_activity": "9/28/2025, 12:00:02 AM"
+    },
+    {
+      "id": "569e1605-5bad-4afb-9daf-c98e0b1ac469",
+      "nickname": "Ezzi Ungar",
+      "whatsapp_number": "15166687257",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:59:14 PM",
+      "last_activity": "9/27/2025, 11:59:14 PM"
+    },
+    {
+      "id": "9ae4aa53-ba50-49e2-bd9a-79d3a56a13e5",
+      "nickname": "Esty",
+      "whatsapp_number": "19176182932",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:57:57 PM",
+      "last_activity": "9/27/2025, 11:57:57 PM"
+    },
+    {
+      "id": "b2576c3f-4854-472d-af99-3e6deb4a960d",
+      "nickname": "Dovid O",
+      "whatsapp_number": "972586314579",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:55:14 PM",
+      "last_activity": "9/27/2025, 11:55:14 PM"
+    },
+    {
+      "id": "627f9ee8-cf46-4d60-bc05-fbb2c7cbe221",
+      "nickname": "Jeremy Tabak",
+      "whatsapp_number": "15166689629",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:52:57 PM",
+      "last_activity": "9/27/2025, 11:52:57 PM"
+    },
+    {
+      "id": "ee802aa1-3f5e-4dac-a018-f99cb0caf197",
+      "nickname": "Moshe",
+      "whatsapp_number": "19174050900",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:52:36 PM",
+      "last_activity": "9/27/2025, 11:52:36 PM"
+    },
+    {
+      "id": "b7d79c9d-12cb-49e2-aaff-b991c4355c53",
+      "nickname": "Yisrael Margulies",
+      "whatsapp_number": "19174945768",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:52:26 PM",
+      "last_activity": "9/27/2025, 11:52:26 PM"
+    },
+    {
+      "id": "d6c22385-cb3e-40b3-af9a-b2674c5c6b3a",
+      "nickname": "Ettie Cohen",
+      "whatsapp_number": "17864179183",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:52:19 PM",
+      "last_activity": "9/27/2025, 11:52:19 PM"
+    },
+    {
+      "id": "b6064cbd-d4c2-4ce4-8f93-c9d961040393",
+      "nickname": "CR",
+      "whatsapp_number": "13474516510",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:52:10 PM",
+      "last_activity": "9/27/2025, 11:52:10 PM"
+    },
+    {
+      "id": "cd98a534-88ba-4cd5-b354-0b34c5022f16",
+      "nickname": "nathan",
+      "whatsapp_number": "13475097662",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:51:54 PM",
+      "last_activity": "9/27/2025, 11:51:54 PM"
+    },
+    {
+      "id": "b8c83fcd-fa31-4cca-92f6-9bf86f495204",
+      "nickname": "Yaakov Klein",
+      "whatsapp_number": "17185947057",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:50:43 PM",
+      "last_activity": "9/27/2025, 11:50:43 PM"
+    },
+    {
+      "id": "d3631515-a445-428d-ae3c-06e04c718e32",
+      "nickname": "Shifra Berkowitz",
+      "whatsapp_number": "16462414712",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:50:33 PM",
+      "last_activity": "9/27/2025, 11:50:33 PM"
+    },
+    {
+      "id": "616d3704-2696-48ca-843f-746d38d84a87",
+      "nickname": "R. Tiefenbrunner 👩🏻",
+      "whatsapp_number": "32485275685",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:49:57 PM",
+      "last_activity": "9/27/2025, 11:49:57 PM"
+    },
+    {
+      "id": "125ec457-d887-4af4-bcf6-1e91fb39fcc6",
+      "nickname": "Shai",
+      "whatsapp_number": "13477681293",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:49:29 PM",
+      "last_activity": "9/27/2025, 11:49:29 PM"
+    },
+    {
+      "id": "68844d7f-ee35-4797-9895-5b78025e9942",
+      "nickname": "Shira Feigen",
+      "whatsapp_number": "15165822112",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:49:00 PM",
+      "last_activity": "9/27/2025, 11:49:00 PM"
+    },
+    {
+      "id": "b892d055-74f3-4686-aa01-ef5ff20a48f9",
+      "nickname": "Shira Benmergui",
+      "whatsapp_number": "972527677728",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:48:34 PM",
+      "last_activity": "9/27/2025, 11:48:34 PM"
+    },
+    {
+      "id": "f9471767-8b06-43be-a971-e84f6851261b",
+      "nickname": "Colored Caulk",
+      "whatsapp_number": "17325810241",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:48:28 PM",
+      "last_activity": "9/27/2025, 11:48:28 PM"
+    },
+    {
+      "id": "fb7094a7-a17c-467f-8fbb-97209863d3ed",
+      "nickname": "Mordy",
+      "whatsapp_number": "19172265675",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:48:06 PM",
+      "last_activity": "9/27/2025, 11:48:06 PM"
+    },
+    {
+      "id": "83a867bc-1520-4f4c-8fd4-db4173f7bc06",
+      "nickname": "J:)",
+      "whatsapp_number": "17735432202",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:48:05 PM",
+      "last_activity": "9/27/2025, 11:48:05 PM"
+    },
+    {
+      "id": "d1b55458-a8a2-4e88-af68-35b78c3a393f",
+      "nickname": "Shaya Levertov",
+      "whatsapp_number": "19175456292",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:42:31 PM",
+      "last_activity": "9/27/2025, 11:42:31 PM"
+    },
+    {
+      "id": "abe97567-aaa3-484f-ba16-07acf23bd92e",
+      "nickname": "Yisrael",
+      "whatsapp_number": "13105969004",
+      "is_active": true,
+      "createdAt": "9/27/2025, 8:46:59 PM",
+      "last_activity": "9/27/2025, 8:46:59 PM"
+    },
+    {
+      "id": "d16d1c4b-ef57-4930-ba08-da2a4ab3b420",
+      "nickname": "c",
+      "whatsapp_number": "447703738000",
+      "is_active": true,
+      "createdAt": "9/27/2025, 7:18:20 PM",
+      "last_activity": "9/27/2025, 7:18:20 PM"
+    },
+    {
+      "id": "e216f0b2-f2ad-4fd3-8c40-800c0254e2ec",
+      "nickname": "Khubaib Shabbir",
+      "whatsapp_number": "923224182838",
+      "is_active": true,
+      "createdAt": "9/27/2025, 7:06:33 PM",
+      "last_activity": "9/27/2025, 7:06:33 PM"
+    },
+    {
+      "id": "75d9ef62-c1bf-47c7-8143-47d6130eb23e",
+      "nickname": "Osama Malhi",
+      "whatsapp_number": "923320477770",
+      "is_active": true,
+      "createdAt": "9/27/2025, 2:23:14 PM",
+      "last_activity": "9/27/2025, 2:23:14 PM"
+    },
+    {
+      "id": "55a5dbb5-6343-4caf-88ac-915460b871ff",
+      "nickname": "code schode",
+      "whatsapp_number": "923196612416",
+      "is_active": true,
+      "createdAt": "9/27/2025, 11:01:28 AM",
+      "last_activity": "9/27/2025, 11:01:28 AM"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { apiService } from '@/services/api';
 
 interface CreateGameFormProps {
-  onGameCreated: () => void;
+  onGameCreated: (gameId: string) => void;
 }
 
 export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
@@ -35,6 +35,16 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
     setGameId(null);
 
     try {
+      // Validate start time
+      const selectedTime = new Date(formData.startTime);
+      const now = new Date();
+      
+      if (selectedTime <= now) {
+        setMessage('Error: Start time must be in the future. Please select a future date and time.');
+        setLoading(false);
+        return;
+      }
+
       const result = await apiService.createGame(formData);
       setGameId(result.id);
       setMessage('Game created successfully!');
@@ -43,7 +53,7 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
         prizePool: 100,
         totalQuestions: 10
       });
-      onGameCreated();
+      onGameCreated(result.id);
     } catch (error) {
       setMessage('Error creating game. Please try again.');
     } finally {
@@ -64,6 +74,7 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
               id="startTime"
               value={formData.startTime}
               onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+              min={new Date().toISOString().slice(0, 16)}
               required
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             />
@@ -100,6 +111,7 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             />
           </div>
+
         </div>
 
         {message && (

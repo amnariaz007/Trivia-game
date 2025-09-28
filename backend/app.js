@@ -12,12 +12,14 @@ const { sequelize, testConnection } = require('./config/database');
 const { validateConfig } = require('./config/whatsapp');
 require('./models'); // Initialize models
 
-// Import and initialize queue service
+// Import and initialize services
 const queueService = require('./services/queueService');
 const gameService = require('./services/gameService');
+const PerformanceMonitor = require('./services/performanceMonitor');
 
-// Initialize queue service to ensure process handlers are set up
+// Initialize services
 console.log('🔄 Initializing queue service...');
+const performanceMonitor = new PerformanceMonitor();
 
 // Import routes
 const webhookRoutes = require('./routes/webhook');
@@ -79,6 +81,18 @@ app.use('/api/', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Performance monitoring middleware
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  
+  res.on('finish', () => {
+    const responseTime = Date.now() - startTime;
+    performanceMonitor.recordRequest(req.path, responseTime, res.statusCode < 400);
+  });
+  
+  next();
+});
+
 // Serve static files
 app.use(express.static('public'));
 
@@ -89,6 +103,18 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV
+  });
+});
+
+// Performance monitoring endpoint
+app.get('/performance', (req, res) => {
+  const summary = performanceMonitor.getSummary();
+  const health = performanceMonitor.checkHealth();
+  
+  res.status(200).json({
+    summary,
+    health,
+    timestamp: new Date().toISOString()
   });
 });
 

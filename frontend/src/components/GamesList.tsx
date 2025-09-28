@@ -9,6 +9,10 @@ interface Game {
   prize_pool: string;
   start_time: string;
   players?: any[];
+  winners?: Array<{
+    nickname: string;
+    whatsapp_number: string;
+  }>;
 }
 
 interface GamesListProps {
@@ -46,13 +50,28 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
   };
 
   const handleEndGame = async (gameId: string) => {
+    // Show confirmation dialog for emergency end
+    const confirmed = window.confirm(
+      '🚨 EMERGENCY GAME END\n\n' +
+      'Are you sure you want to immediately end this game?\n\n' +
+      'This will:\n' +
+      '• Stop all timers immediately\n' +
+      '• Send emergency end message to all players\n' +
+      '• Mark game as finished\n\n' +
+      'This action cannot be undone!'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+    
     setLoading(gameId);
     try {
       const result = await apiService.endGame(gameId);
-      alert(`Game ended successfully! Winners: ${result.winners.join(', ')}`);
+      alert(`🚨 Game ended successfully!\n\nWinners: ${result.winners.join(', ')}\nWinner Count: ${result.winnerCount}`);
       onGameUpdated();
     } catch (error) {
-      alert('Error ending game');
+      alert('❌ Error ending game: ' + (error.message || 'Unknown error'));
     } finally {
       setLoading(null);
     }
@@ -89,6 +108,8 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
         return 'border-l-red-500';
       case 'finished':
         return 'border-l-green-500';
+      case 'expired':
+        return 'border-l-gray-400';
       default:
         return 'border-l-gray-500';
     }
@@ -115,10 +136,31 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900">Game {game.id.slice(0, 8)}</h3>
                   <div className="mt-2 space-y-1 text-sm text-gray-600">
-                    <p><strong>Status:</strong> {game.status.replace('_', ' ')}</p>
+                    <p><strong>Status:</strong> 
+                      <span className={`ml-1 ${game.status === 'expired' ? 'text-gray-500' : ''}`}>
+                        {game.status === 'expired' ? '⏰ Expired' : game.status.replace('_', ' ')}
+                      </span>
+                    </p>
                     <p><strong>Prize Pool:</strong> ${game.prize_pool}</p>
                     <p><strong>Start Time (EST):</strong> {formatDate(game.start_time)}</p>
                     <p><strong>Players:</strong> {game.players?.length || 0}</p>
+                    {game.winners && game.winners.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm font-medium text-green-700">🏆 Winners:</p>
+                        <div className="ml-2 space-y-1">
+                          {game.winners.map((winner, index) => (
+                            <p key={index} className="text-xs text-green-600">
+                              • {winner.nickname} ({winner.whatsapp_number})
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {game.status === 'expired' && (
+                      <p className="text-xs text-gray-500 italic">
+                        ⚠️ Game time has passed - registration and starting are no longer available
+                      </p>
+                    )}
                   </div>
                 </div>
                 
@@ -148,12 +190,13 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
                       onClick={() => handleEndGame(game.id)}
                       disabled={loading === game.id}
                       className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm font-medium disabled:opacity-50"
+                      title="Emergency: Immediately end the game and notify all players"
                     >
-                      {loading === game.id ? 'Ending...' : 'End Game'}
+                      {loading === game.id ? 'Ending...' : '🚨 End Game'}
                     </button>
                   )}
                   
-                  {game.status === 'finished' && (
+                  {(game.status === 'finished' || game.status === 'expired') && (
                     <button
                       onClick={() => handleExportCSV(game.id)}
                       disabled={loading === game.id}

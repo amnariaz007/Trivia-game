@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [games, setGames] = useState<any[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
+  const [createdGameId, setCreatedGameId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -47,6 +48,11 @@ export default function DashboardPage() {
     } finally {
       setLoadingStats(false);
     }
+  };
+
+  const handleGameCreated = (gameId: string) => {
+    setCreatedGameId(gameId);
+    loadDashboard();
   };
 
   if (loading) {
@@ -121,13 +127,13 @@ export default function DashboardPage() {
         {/* Create Game Section */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">🎯 Create New Game</h2>
-          <CreateGameForm onGameCreated={loadDashboard} />
+          <CreateGameForm onGameCreated={handleGameCreated} />
         </div>
 
         {/* Add Questions Section */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">❓ Add Questions</h2>
-          <AddQuestionsForm onQuestionsAdded={loadDashboard} />
+          <AddQuestionsForm onQuestionsAdded={loadDashboard} gameId={createdGameId} />
         </div>
 
         {/* Games Management Section */}

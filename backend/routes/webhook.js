@@ -312,7 +312,7 @@ Reply "PLAY" to get a reminder when we start!`
       // This is a user with default nickname - check if they're sending a command
       const command = (messageText || buttonResponse || '').toUpperCase().trim();
       
-      if (command && ['PLAY', 'JOIN', 'HELP', 'NICKNAME'].includes(command)) {
+      if (command && ['PLAY', 'JOIN', 'HELP'].includes(command)) {
         // User is sending a command, process it normally
         console.log(`📱 User with default nickname sending command: ${command}`);
         // Continue to command processing below
@@ -355,11 +355,18 @@ Reply "PLAY" to get a reminder when we start!`
       case 'HELP':
         await handleHelpCommand(user, wa_id);
         break;
-      case 'NICKNAME':
-        await handleNicknameChange(user, messageText);
-        break;
       default:
-        await handleGameAnswer(user, command);
+        // Check if there's an active game before treating as answer
+        const activeGame = await Game.getActiveGame();
+        if (activeGame && activeGame.status === 'in_progress') {
+          await handleGameAnswer(user, command);
+        } else {
+          // No active game, show command help message
+          await queueService.addMessage('send_message', {
+            to: user.whatsapp_number,
+            message: '❓ Please use these commands only:\n\n🎮 PLAY - Get reminder for next game\n📝 JOIN - Join current game\n❓ HELP - Show this message'
+          });
+        }
         break;
     }
 
@@ -457,7 +464,7 @@ Tap "PLAY" to get the start ping!`
   }
 }
 
-// Handle JOIN command
+// Handle JOIN command with race condition protection
 async function handleJoinCommand(user) {
   try {
     const activeGame = await Game.getActiveGame();
@@ -470,28 +477,43 @@ async function handleJoinCommand(user) {
       return;
     }
 
-    // Check if user is already registered
-    const existingPlayer = await GamePlayer.findOne({
-      where: {
-        game_id: activeGame.id,
-        user_id: user.id
-      }
-    });
-
-    if (existingPlayer) {
-      await queueService.addMessage('send_message', {
-        to: user.whatsapp_number,
-        message: '✅ You\'re already registered for this game! We\'ll send you a reminder when it starts.'
-      });
+    // Create registration lock key
+    const registrationLockKey = `user_registration:${activeGame.id}:${user.id}`;
+    
+    // Acquire lock to prevent race condition
+    const lockAcquired = await queueService.acquireLock(registrationLockKey, 10);
+    if (!lockAcquired) {
+      console.log(`🔒 Registration lock not acquired for user ${user.id}, skipping`);
       return;
     }
 
-    // Register user for the game
-    await GamePlayer.create({
-      game_id: activeGame.id,
-      user_id: user.id,
-      status: 'registered'
-    });
+    try {
+      // Check if user is already registered (double-check with lock)
+      const existingPlayer = await GamePlayer.findOne({
+        where: {
+          game_id: activeGame.id,
+          user_id: user.id
+        }
+      });
+
+      if (existingPlayer) {
+        await queueService.addMessage('send_message', {
+          to: user.whatsapp_number,
+          message: '✅ You\'re already registered for this game! We\'ll send you a reminder when it starts.'
+        });
+        return;
+      }
+
+      // Register user for the game (atomic operation)
+      await GamePlayer.create({
+        game_id: activeGame.id,
+        user_id: user.id,
+        status: 'registered'
+      });
+    } finally {
+      // Always release the lock
+      await queueService.releaseLock(registrationLockKey);
+    }
 
     // Send confirmation
     const gameTime = new Date(activeGame.start_time).toLocaleString();
@@ -528,16 +550,15 @@ async function handleHelpCommand(user, wa_id) {
       to: wa_id, // Use wa_id from webhook instead of stored phone number
       message: `❓ How QRush Trivia Works:
 
-• Sudden-death: get every question right to stay in.
-• 10s per question with countdown updates (10s → 5s → 2s → time's up).
-• Wrong or no answer = elimination.
-• If multiple players survive the final question, the prize pool is split evenly.
-• Winners are DM'd directly.
+•⁠  ⁠Sudden-death: get every question right to stay in.
+•⁠  ⁠10s per question with countdown updates (10s → 5s → 2s → time's up).
+•⁠  ⁠Wrong or no answer = elimination.
+•⁠  ⁠If multiple players survive the final question, the prize pool is split evenly.
+•⁠  ⁠Winners are DM'd directly.
 
 📱 Commands:
-• PLAY - Join next game
-• HELP - Show this message
-• NICKNAME [name] - Change your nickname
+•⁠  ⁠PLAY - Join next game
+•⁠  ⁠HELP - Show this message
 
 ⏰ Next game: ${nextGameTime}
 💰 Prize: $${prizePool}
@@ -564,7 +585,7 @@ async function handleGameAnswer(user, answer) {
       console.log(`❌ No active game found for player ${user.whatsapp_number}`);
       await queueService.addMessage('send_message', {
         to: user.whatsapp_number,
-        message: '❓ I didn\'t get that. Use the answer buttons to play.'
+        message: '❓ No active game found. Use these commands:\n\n🎮 PLAY - Get reminder for next game\n📝 JOIN - Join current game\n❓ HELP - Show this message'
       });
       return;
     }
@@ -690,34 +711,6 @@ We'll send you a reminder when the next game starts.`;
   }
 }
 
-// Handle nickname change
-async function handleNicknameChange(user, newNickname) {
-  try {
-    if (!newNickname || newNickname.length < 2 || newNickname.length > 50) {
-      await queueService.addMessage('send_message', {
-        to: user.whatsapp_number,
-        message: 'Please provide a nickname between 2-50 characters. Example: NICKNAME John'
-      });
-      return;
-    }
-
-    // Update user nickname
-    user.nickname = newNickname;
-    await user.save();
-
-    await queueService.addMessage('send_message', {
-      to: user.whatsapp_number,
-      message: `✅ Your nickname has been updated to: ${newNickname}`
-    });
-
-  } catch (error) {
-    console.error('❌ Error handling nickname change:', error);
-    await queueService.addMessage('send_message', {
-      to: user.whatsapp_number,
-      message: '❌ Something went wrong. Please try again.'
-    });
-  }
-}
 
 // Helper function to get next game time
 async function getNextGameTime() {

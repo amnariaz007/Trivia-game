@@ -1,5 +1,6 @@
 const Queue = require('bull');
 const Redis = require('ioredis');
+const MessageBatcher = require('./messageBatcher');
 
 console.log('🔧 Initializing Queue Service...');
 
@@ -9,6 +10,7 @@ class QueueService {
     this.redis = null;
     this.messageQueue = null;
     this.gameQueue = null;
+    this.messageBatcher = new MessageBatcher();
 
     // Initialize Redis connection
     this.initializeRedis();
@@ -134,8 +136,10 @@ class QueueService {
     }
 
     console.log('🔧 Setting up queue handlers...');
+    console.log('⚡ Message queue concurrency: 20 workers');
+    console.log('⚡ Game queue concurrency: 5 workers');
 
-    this.messageQueue.process('send_message', 1, async (job) => {
+    this.messageQueue.process('send_message', 20, async (job) => {
       try {
         console.log('📤 Processing send_message job:', job.id);
         return await this.processMessage(job.data);
@@ -145,7 +149,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_template', 1, async (job) => {
+    this.messageQueue.process('send_template', 20, async (job) => {
       try {
         console.log('📤 Processing send_template job:', job.id);
         return await this.processTemplate(job.data);
@@ -155,7 +159,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_question', 1, async (job) => {
+    this.messageQueue.process('send_question', 20, async (job) => {
       try {
         console.log('📤 Processing send_question job:', job.id);
         return await this.processQuestion(job.data);
@@ -165,7 +169,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_elimination', 1, async (job) => {
+    this.messageQueue.process('send_elimination', 20, async (job) => {
       try {
         console.log('📤 Processing send_elimination job:', job.id);
         return await this.processElimination(job.data);
@@ -175,7 +179,7 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('game_timer', 1, async (job) => {
+    this.gameQueue.process('game_timer', 5, async (job) => {
       try {
         console.log('⏰ Processing game_timer job:', job.id);
         return await this.processGameTimer(job.data);
@@ -185,7 +189,7 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('question_timer', 1, async (job) => {
+    this.gameQueue.process('question_timer', 5, async (job) => {
       try {
         console.log('❓ Processing question_timer job:', job.id);
         return await this.processQuestionTimer(job.data);
@@ -236,6 +240,17 @@ class QueueService {
       console.log('⚠️  Message queue not available, skipping message');
       return null;
     }
+
+    // Use batching for send_message type to handle 200+ users efficiently
+    if (type === 'send_message') {
+      try {
+        return await this.addBatchedMessage(data.to, data.message, data.priority || 'normal');
+      } catch (error) {
+        console.error('❌ Failed to add batched message:', error.message);
+        return null;
+      }
+    }
+
     try {
       const job = await this.messageQueue.add(type, data, {
         attempts: 3,
@@ -250,6 +265,37 @@ class QueueService {
       console.error('❌ Failed to add message to queue:', error.message);
       return null;
     }
+  }
+
+  /**
+   * Add a message using the message batcher for high-volume scenarios
+   * @param {string} to - Recipient phone number
+   * @param {string} message - Message content
+   * @param {string} priority - Message priority (high, normal, low)
+   * @returns {Promise} - Resolves when message is processed
+   */
+  async addBatchedMessage(to, message, priority = 'normal') {
+    try {
+      return await this.messageBatcher.addMessage(to, message, priority);
+    } catch (error) {
+      console.error('❌ Failed to add batched message:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get message batcher statistics
+   * @returns {Object} - Batcher statistics
+   */
+  getBatcherStats() {
+    return this.messageBatcher.getStats();
+  }
+
+  /**
+   * Flush all pending batched messages
+   */
+  async flushBatchedMessages() {
+    await this.messageBatcher.flush();
   }
 
   async addGameTimer(type, data, delay = 0) {
@@ -273,7 +319,30 @@ class QueueService {
   }
 
   async processMessage(data) {
-    const { to, message } = data;
+    const { to, message, gameId, messageType } = data;
+    
+    // Create deduplication key for critical game messages
+    if (gameId && messageType && ['game_start', 'elimination', 'results', 'timer_update', 'answer_confirmation', 'emergency_end'].includes(messageType)) {
+      const dedupeKey = `message_sent:${gameId}:${messageType}:${to}`;
+      
+      if (this.redis) {
+        try {
+          const alreadySent = await this.redis.get(dedupeKey);
+          if (alreadySent) {
+            console.log(`🔄 Skipping duplicate ${messageType} message to ${to} (already sent)`);
+            return { message: 'duplicate_skipped' };
+          }
+          
+          // Mark as sent with 2 minute expiration
+          await this.redis.setex(dedupeKey, 120, 'sent');
+          console.log(`✅ ${messageType} message marked as sent to ${to}`);
+        } catch (error) {
+          console.error('❌ Redis message deduplication error:', error);
+          // Continue with sending if Redis fails
+        }
+      }
+    }
+    
     const whatsappService = require('./whatsappService');
     return await whatsappService.sendTextMessage(to, message);
   }
@@ -285,7 +354,29 @@ class QueueService {
   }
 
   async processQuestion(data) {
-    const { to, questionText, options, questionNumber, correctAnswer } = data;
+    const { to, questionText, options, questionNumber, correctAnswer, gameId } = data;
+    
+    // Create deduplication key for this question to this user
+    const dedupeKey = `question_sent:${gameId}:${questionNumber}:${to}`;
+    
+    // Check if this question was already sent to this user
+    if (this.redis) {
+      try {
+        const alreadySent = await this.redis.get(dedupeKey);
+        if (alreadySent) {
+          console.log(`🔄 Skipping duplicate question ${questionNumber} to ${to} (already sent)`);
+          return { message: 'duplicate_skipped' };
+        }
+        
+        // Mark as sent with 5 minute expiration (longer than any question duration)
+        await this.redis.setex(dedupeKey, 300, 'sent');
+        console.log(`✅ Question ${questionNumber} marked as sent to ${to}`);
+      } catch (error) {
+        console.error('❌ Redis deduplication error:', error);
+        // Continue with sending if Redis fails
+      }
+    }
+    
     const whatsappService = require('./whatsappService');
     return await whatsappService.sendQuestion(to, questionText, options, questionNumber, correctAnswer);
   }
@@ -386,6 +477,69 @@ class QueueService {
     } catch (error) {
       console.error('❌ Error deleting session:', error.message);
       return false;
+    }
+  }
+
+  // Redis-based locking mechanism for race condition prevention
+  async acquireLock(lockKey, ttlSeconds = 30) {
+    if (!this.redis) {
+      console.log('⚠️  Redis not available for locking');
+      return false;
+    }
+
+    try {
+      const lockValue = Date.now().toString();
+      const result = await this.redis.set(lockKey, lockValue, 'PX', ttlSeconds * 1000, 'NX');
+      return result === 'OK';
+    } catch (error) {
+      console.error('❌ Error acquiring lock:', error);
+      return false;
+    }
+  }
+
+  async releaseLock(lockKey) {
+    if (!this.redis) return;
+
+    try {
+      await this.redis.del(lockKey);
+    } catch (error) {
+      console.error('❌ Error releasing lock:', error);
+    }
+  }
+
+  async isLocked(lockKey) {
+    if (!this.redis) return false;
+
+    try {
+      const result = await this.redis.exists(lockKey);
+      return result === 1;
+    } catch (error) {
+      console.error('❌ Error checking lock:', error);
+      return false;
+    }
+  }
+
+  // Clear deduplication keys for a game (call when game ends)
+  async clearGameDeduplication(gameId) {
+    if (!this.redis) return;
+    
+    try {
+      console.log(`🧹 Clearing deduplication keys for game ${gameId}`);
+      
+      // Get all keys matching the game pattern
+      const questionKeys = await this.redis.keys(`question_sent:${gameId}:*`);
+      const messageKeys = await this.redis.keys(`message_sent:${gameId}:*`);
+      
+      const allKeys = [...questionKeys, ...messageKeys];
+      
+      if (allKeys.length > 0) {
+        await this.redis.del(...allKeys);
+        console.log(`✅ Cleared ${allKeys.length} deduplication keys for game ${gameId}`);
+      } else {
+        console.log(`ℹ️  No deduplication keys found for game ${gameId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error clearing deduplication keys:', error);
     }
   }
 

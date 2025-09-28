@@ -8,7 +8,7 @@ const Game = sequelize.define('Game', {
     primaryKey: true
   },
   status: {
-    type: DataTypes.ENUM('scheduled', 'pre_game', 'in_progress', 'finished', 'cancelled'),
+    type: DataTypes.ENUM('scheduled', 'pre_game', 'in_progress', 'finished', 'cancelled', 'expired'),
     defaultValue: 'scheduled',
     allowNull: false
   },
@@ -89,7 +89,23 @@ Game.prototype.updatePlayerCount = function(count) {
 };
 
 // Class methods
-Game.getActiveGame = function() {
+Game.getActiveGame = async function() {
+  const now = new Date();
+  
+  // First, automatically expire any games that should have started but haven't
+  await this.update(
+    { status: 'expired' },
+    {
+      where: {
+        status: ['scheduled', 'pre_game'],
+        start_time: {
+          [Op.lt]: now
+        }
+      }
+    }
+  );
+  
+  // Then find the current active game
   return this.findOne({
     where: {
       status: ['scheduled', 'pre_game', 'in_progress']
@@ -107,6 +123,15 @@ Game.getScheduledGames = function() {
       }
     },
     order: [['start_time', 'ASC']]
+  });
+};
+
+Game.getExpiredGames = function() {
+  return this.findAll({
+    where: {
+      status: 'expired'
+    },
+    order: [['start_time', 'DESC']]
   });
 };
 
