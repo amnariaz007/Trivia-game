@@ -177,9 +177,9 @@ Reply "PLAY" to get a reminder when we start!`;
 ⏰ Game begins at ${gameTime}
 💰 Prize pool: $${prizePool}
 
-Tap "PLAY" to get the start ping!`;
+Tap "JOIN" to get the start ping!`;
 
-    return await this.sendInteractiveMessage(to, message, ['PLAY']);
+    return await this.sendInteractiveMessage(to, message, ['JOIN']);
   }
 
   // Send question with timer

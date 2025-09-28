@@ -456,7 +456,7 @@ Reply "PLAY" to get a reminder before we start.`
 ⏰ Game begins at ${gameTime} GMT
 💰 Prize pool: $${prizePool}
 
-Tap "PLAY" to get the start ping!`
+Tap "JOIN" to get the start ping!`
     });
 
   } catch (error) {
