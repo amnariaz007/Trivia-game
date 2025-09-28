@@ -203,11 +203,11 @@ class GameService {
       // Send game start message to all players
       await this.sendGameStartMessage(gameId);
 
-      // Start first question after 5 seconds
+      // Start first question after 2 seconds
       setTimeout(() => {
-        console.log(`🚀 Starting first question for game ${gameId} after 5 second delay`);
+        console.log(`🚀 Starting first question for game ${gameId} after 2 second delay`);
         this.startQuestion(gameId, 0);
-      }, 5000);
+      }, 2000);
 
       console.log(`🎮 Game ${gameId} started with ${gameState.players.length} players`);
       
@@ -530,6 +530,25 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         // Double-check if player already answered (with lock)
         if (player.answer) {
           console.log(`❌ Player already answered: ${player.answer}`);
+          
+          // Check if all players have answered and process results if needed
+          const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+          const answeredPlayers = alivePlayers.filter(p => p.answer);
+          
+          if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
+            console.log(`🎯 All players answered, processing results for already answered player`);
+            setTimeout(async () => {
+              const queueService = require('./queueService');
+              const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
+              const isLocked = await queueService.isLocked(lockKey);
+              
+              if (!isLocked) {
+                console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1} (already answered)`);
+                await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
+              }
+            }, 1000);
+          }
+          
           return {
             correct: player.answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim(),
             correctAnswer: currentQuestion.correct_answer,
@@ -600,11 +619,12 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
           const isLocked = await queueService.isLocked(lockKey);
           
           if (!isLocked) {
+            console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1}`);
             await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
           } else {
             console.log(`🔒 Question results already being processed, skipping duplicate call`);
           }
-        }, 2000); // 2 second delay to show the "locked in" message
+        }, 1000); // Reduced delay to 1 second for faster progression
       } else {
         console.log(`⏳ ${alivePlayers.length - answeredPlayers.length} players still need to answer, waiting...`);
         // Not all players answered yet, continue waiting
@@ -941,8 +961,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       // Continue to next question
       console.log(`⏭️  Continuing to next question. ${alivePlayers.length} players alive`);
       setTimeout(() => {
+        console.log(`🚀 Starting next question ${questionIndex + 2} for game ${gameId}`);
         this.startQuestion(gameId, questionIndex + 1);
-      }, 3000); // 3 second delay before next question
+      }, 2000); // Reduced delay to 2 seconds for faster progression
 
     } catch (error) {
       console.error('❌ Error sending question results:', error);
