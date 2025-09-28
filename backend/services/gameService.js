@@ -694,8 +694,17 @@ class GameService {
   // Handle question timeout - eliminate players who didn't answer
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
+      // Add delay to prevent race condition with answer processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       const gameState = await this.getGameState(gameId);
       if (!gameState) return;
+
+      // Check if question has already been processed (moved to next question)
+      if (gameState.currentQuestion > questionIndex) {
+        console.log(`⏰ Question ${questionIndex + 1} already processed, skipping timeout`);
+        return;
+      }
 
       const { players, questions } = gameState;
       const question = questions[questionIndex];
