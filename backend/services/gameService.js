@@ -109,6 +109,13 @@ class GameService {
         // Store in Redis as primary, in-memory as fallback
         await this.setGameState(game.id, gameState);
         console.log(`✅ Restored game ${game.id} with ${gameState.players.length} players`);
+        
+        // If game was in progress, restart the question timer
+        if (gameState.status === 'in_progress' && gameState.currentQuestion < gameState.questions.length) {
+          console.log(`🔄 Restarting question timer for restored game ${game.id}`);
+          // Don't restart timer immediately, let the game continue from where it left off
+          // The next question will be started when the current one times out or all players answer
+        }
       }
 
       console.log(`✅ Restored ${activeGames.length} active games`);
@@ -171,7 +178,9 @@ class GameService {
 
       // Initialize game state with proper structure
       const gameState = {
+        id: gameId,
         gameId,
+        status: 'in_progress',
         currentQuestion: 0,
         questions: game.questions,
         players: activePlayers.map(player => ({
@@ -184,10 +193,12 @@ class GameService {
           eliminationReason: null
         })),
         startTime: new Date(),
-        questionTimer: null
+        questionTimer: null,
+        activeTimers: new Set()
       };
 
       await this.setGameState(gameId, gameState);
+      console.log(`✅ Game state initialized and saved to Redis for game ${gameId}`);
 
       // Send game start message to all players
       await this.sendGameStartMessage(gameId);
@@ -269,6 +280,9 @@ class GameService {
         }
       }
 
+      // Save updated game state to Redis before sending questions
+      await this.setGameState(gameId, gameState);
+
       // Update game in database
       const game = await Game.findByPk(gameId);
       game.current_question = questionIndex;
@@ -277,7 +291,10 @@ class GameService {
       // Send question to all alive players
       for (const player of players) {
         if (player.status === 'alive') {
-          await queueService.addMessage('send_question', {
+          console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.nickname} (${player.user.whatsapp_number})`);
+          
+          // Try queue first, fallback to direct send
+          const job = await queueService.addMessage('send_question', {
             to: player.user.whatsapp_number,
             gameId,
             questionNumber: questionIndex + 1,
@@ -286,6 +303,24 @@ class GameService {
             correctAnswer: question.correct_answer,
             timeLimit: 10
           });
+          
+          // If queue failed, send directly
+          if (!job) {
+            console.log(`⚠️ Queue failed for question, sending directly to ${player.user.whatsapp_number}`);
+            try {
+              const whatsappService = require('./whatsappService');
+              await whatsappService.sendQuestion(
+                player.user.whatsapp_number,
+                question.question_text,
+                [question.option_a, question.option_b, question.option_c, question.option_d],
+                questionIndex + 1,
+                question.correct_answer
+              );
+              console.log(`✅ Question sent directly to ${player.user.nickname}`);
+            } catch (error) {
+              console.error(`❌ Failed to send question directly to ${player.user.nickname}:`, error);
+            }
+          }
         }
       }
 
@@ -381,26 +416,45 @@ class GameService {
         console.log(`🧹 Cleared question timer for game ${gameId}`);
       }
 
-      const game = await Game.findByPk(gameId, {
-        include: [{ model: Question, as: 'questions' }]
-      });
+      // Clear active timers set
+      if (gameState.activeTimers) {
+        gameState.activeTimers.clear();
+        console.log(`🧹 Cleared active timers set for game ${gameId}`);
+      }
 
-      const question = game.questions[questionIndex];
+      const question = gameState.questions[questionIndex];
+      if (!question) {
+        console.log(`❌ Question ${questionIndex + 1} not found in game state`);
+        return;
+      }
+
       const correctAnswer = question.correct_answer;
 
       // Eliminate players who haven't answered
       for (const player of gameState.players) {
         if (player.status === 'alive' && !player.answer) {
           player.status = 'eliminated';
+          player.eliminatedAt = new Date();
+          player.eliminatedOnQuestion = questionIndex + 1;
+          player.eliminationReason = 'timeout';
+          
+          console.log(`⏰ Player ${player.user.nickname} eliminated for timeout on Q${questionIndex + 1}`);
           
           // Send elimination message
-          await queueService.addMessage('send_elimination', {
+          await queueService.addMessage('send_message', {
             to: player.user.whatsapp_number,
-            correctAnswer,
-            isCorrect: false
+            message: `⏰ Time's up! You didn't answer in time and have been eliminated.
+
+❌ Eliminated on: Question ${questionIndex + 1}
+🎮 Game: ${gameId.slice(0, 8)}...
+
+Stick around to watch the finish! Reply "PLAY" for the next game.`
           });
         }
       }
+
+      // Save updated game state
+      await this.setGameState(gameId, gameState);
 
       // Send results to all players (this will handle game continuation)
       await this.processQuestionResultsWithLock(gameId, questionIndex, correctAnswer);
@@ -455,6 +509,13 @@ class GameService {
       }
 
       try {
+        // Get current question first
+        const currentQuestion = gameState.questions[gameState.currentQuestion];
+        if (!currentQuestion) {
+          console.log(`❌ No current question found for game ${gameId}`);
+          return { message: 'no_active_question' };
+        }
+
         // Double-check if player already answered (with lock)
         if (player.answer) {
           console.log(`❌ Player already answered: ${player.answer}`);
@@ -465,26 +526,25 @@ class GameService {
           };
         }
 
-      // Record the answer
-      player.answer = answer;
-      player.answerTime = Date.now();
-      console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
-      
-      // Save updated game state to Redis
-      await this.setGameState(gameId, gameState);
-      
-      // Immediately send confirmation to player that their answer is locked
-      await queueService.addMessage('send_message', {
-        to: player.user.whatsapp_number,
-        message: '✅ Answer locked in! Please wait until the next round.',
-        gameId: gameId,
-        messageType: 'answer_confirmation'
-      });
-      
-      console.log(`⏰ Player ${player.user.nickname} answered, timer will continue for other players only`);
+        // Record the answer
+        player.answer = answer;
+        player.answerTime = Date.now();
+        console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
+        
+        // Save updated game state to Redis immediately
+        await this.setGameState(gameId, gameState);
+        
+        // Immediately send confirmation to player that their answer is locked
+        await queueService.addMessage('send_message', {
+          to: player.user.whatsapp_number,
+          message: '✅ Answer locked in! Please wait until the next round.',
+          gameId: gameId,
+          messageType: 'answer_confirmation'
+        });
+        
+        console.log(`⏰ Player ${player.user.nickname} answered, timer will continue for other players only`);
 
-      const currentQuestion = gameState.questions[gameState.currentQuestion];
-      const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
+        const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
       
       console.log(`🔍 Answer comparison:`);
       console.log(`🔍 Player answer: "${answer}"`);
@@ -516,8 +576,11 @@ class GameService {
       
       console.log(`🔍 Answer check: ${answeredPlayers.length}/${alivePlayers.length} players answered`);
       
+      // Save updated game state after recording answer
+      await this.setGameState(gameId, gameState);
+      
       // Check if all alive players have answered
-      if (answeredPlayers.length === alivePlayers.length) {
+      if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
         console.log(`🎯 All remaining players answered, processing results immediately`);
         // All players answered, process results immediately
         setTimeout(async () => {
@@ -731,6 +794,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
 
       console.log(`❌ Player ${player.user.nickname} eliminated due to ${reason} on Q${gameState.currentQuestion + 1}`);
 
+      // Save updated game state after elimination
+      await this.setGameState(gameId, gameState);
+
       // Check if game should end (all players eliminated)
       const alivePlayers = gameState.players.filter(p => p.status === 'alive');
       
@@ -790,7 +856,10 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
   async sendQuestionResults(gameId, questionIndex, correctAnswer) {
     try {
       const gameState = await this.getGameState(gameId);
-      if (!gameState) return;
+      if (!gameState) {
+        console.log(`❌ Game state not found for ${gameId} during results processing`);
+        return;
+      }
 
       const { players, questions } = gameState;
       const question = questions[questionIndex];
@@ -808,13 +877,15 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
           player.status = 'eliminated';
           player.eliminatedAt = new Date();
           player.eliminatedOnQuestion = questionIndex + 1;
+          player.eliminationReason = 'wrong_answer';
           
           // Update database
           await GamePlayer.update(
             { 
               status: 'eliminated',
               eliminated_at: new Date(),
-              eliminated_on_question: questionIndex + 1
+              eliminated_on_question: questionIndex + 1,
+              elimination_reason: 'wrong_answer'
             },
             { 
               where: { 
@@ -824,18 +895,22 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
             }
           );
 
-          console.log(`❌ Player ${player.user.nickname} eliminated on Q${questionIndex + 1}`);
+          console.log(`❌ Player ${player.user.nickname} eliminated on Q${questionIndex + 1} (wrong answer)`);
         }
 
         // Send result message
-        await queueService.addMessage('send_elimination', {
+        await queueService.addMessage('send_message', {
           to: player.user.whatsapp_number,
-          correctAnswer,
-          isCorrect,
-          questionNumber: questionIndex + 1,
-          totalQuestions: questions.length
+          message: isCorrect ? 
+            `✅ Correct Answer: ${correctAnswer}\n\n🎉 You're still in!` :
+            `❌ Correct Answer: ${correctAnswer}\n\n💀 You're out this game. Stick around to watch the finish!`,
+          gameId: gameId,
+          messageType: 'elimination'
         });
       }
+
+      // Save updated game state after processing all players
+      await this.setGameState(gameId, gameState);
 
       // Check if game should end (all players eliminated or last question)
       const alivePlayers = players.filter(p => p.status === 'alive');
@@ -970,6 +1045,13 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       const queueService = require('./queueService');
       await queueService.clearGameDeduplication(gameId);
       
+      // Remove from Redis
+      if (this.redisGameState.isAvailable()) {
+        await this.redisGameState.deleteGameState(gameId);
+        console.log(`🧹 Game state removed from Redis for: ${gameId}`);
+      }
+      
+      // Remove from in-memory
       this.activeGames.delete(gameId);
       console.log(`🧹 Game state cleaned up for: ${gameId}`);
 
@@ -1011,17 +1093,45 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
   // Get active game for a player
   async getActiveGameForPlayer(phoneNumber) {
     console.log(`🔍 Looking for active game for player: ${phoneNumber}`);
-    console.log(`🔍 Active games count: ${this.activeGames.size}`);
+    
+    // First check Redis for active games
+    if (this.redisGameState.isAvailable()) {
+      try {
+        const activeGameIds = await this.redisGameState.getActiveGameIds();
+        console.log(`🔍 Found ${activeGameIds.length} active games in Redis`);
+        
+        for (const gameId of activeGameIds) {
+          const gameState = await this.getGameState(gameId);
+          if (gameState && gameState.players) {
+            console.log(`🔍 Checking Redis game ${gameId}:`);
+            console.log(`🔍 - Players count: ${gameState.players.length}`);
+            console.log(`🔍 - Current question: ${gameState.currentQuestion}`);
+            console.log(`🔍 - Game status: ${gameState.status}`);
+            
+            const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
+            if (player) {
+              console.log(`✅ Found player in Redis game ${gameId}`);
+              return { gameId, gameState, player };
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error checking Redis for active games:', error);
+      }
+    }
+    
+    // Fallback to in-memory games
+    console.log(`🔍 Active games count (in-memory): ${this.activeGames.size}`);
     
     for (const [gameId, gameState] of this.activeGames) {
-      console.log(`🔍 Checking game ${gameId}:`);
+      console.log(`🔍 Checking in-memory game ${gameId}:`);
       console.log(`🔍 - Players count: ${gameState.players.length}`);
       console.log(`🔍 - Current question: ${gameState.currentQuestion}`);
       console.log(`🔍 - Game status: ${gameState.status}`);
       
       const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
       if (player) {
-        console.log(`✅ Found player in game ${gameId}`);
+        console.log(`✅ Found player in in-memory game ${gameId}`);
         return { gameId, gameState, player };
       }
     }

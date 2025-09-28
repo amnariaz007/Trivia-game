@@ -597,11 +597,15 @@ async function handleGameAnswer(user, answer) {
     }
 
     console.log(`✅ Processing answer "${answer}" for game ${activeGame.gameId}`);
+    console.log(`🔍 Game state: currentQuestion=${activeGame.gameState.currentQuestion}, players=${activeGame.gameState.players.length}`);
+    
     // Handle the answer
-    await gameService.handlePlayerAnswer(activeGame.gameId, user.whatsapp_number, answer);
+    const result = await gameService.handlePlayerAnswer(activeGame.gameId, user.whatsapp_number, answer);
+    console.log(`📊 Answer processing result:`, result);
 
   } catch (error) {
     console.error('❌ Error handling game answer:', error);
+    console.error('❌ Error stack:', error.stack);
     await queueService.addMessage('send_message', {
       to: user.whatsapp_number,
       message: '❌ Something went wrong. Please try again.'

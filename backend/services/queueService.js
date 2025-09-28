@@ -358,8 +358,8 @@ class QueueService {
   async processMessage(data) {
     const { to, message, gameId, messageType } = data;
     
-    // Create deduplication key for critical game messages
-    if (gameId && messageType && ['game_start', 'elimination', 'results', 'timer_update', 'answer_confirmation', 'emergency_end'].includes(messageType)) {
+    // Create deduplication key for critical game messages (but be less aggressive)
+    if (gameId && messageType && ['game_start', 'elimination', 'emergency_end'].includes(messageType)) {
       const dedupeKey = `message_sent:${gameId}:${messageType}:${to}`;
       
       if (this.redis) {
@@ -370,8 +370,8 @@ class QueueService {
             return { message: 'duplicate_skipped' };
           }
           
-          // Mark as sent with 2 minute expiration
-          await this.redis.setex(dedupeKey, 120, 'sent');
+          // Mark as sent with 30 second expiration (shorter for better responsiveness)
+          await this.redis.setex(dedupeKey, 30, 'sent');
           console.log(`✅ ${messageType} message marked as sent to ${to}`);
         } catch (error) {
           console.error('❌ Redis message deduplication error:', error);
@@ -393,10 +393,10 @@ class QueueService {
   async processQuestion(data) {
     const { to, questionText, options, questionNumber, correctAnswer, gameId } = data;
     
-    // Create deduplication key for this question to this user
+    // Create deduplication key for this question to this user (but be less aggressive)
     const dedupeKey = `question_sent:${gameId}:${questionNumber}:${to}`;
     
-    // Check if this question was already sent to this user
+    // Check if this question was already sent to this user (only for same question number)
     if (this.redis) {
       try {
         const alreadySent = await this.redis.get(dedupeKey);
@@ -405,8 +405,8 @@ class QueueService {
           return { message: 'duplicate_skipped' };
         }
         
-        // Mark as sent with 5 minute expiration (longer than any question duration)
-        await this.redis.setex(dedupeKey, 300, 'sent');
+        // Mark as sent with 2 minute expiration (shorter for better responsiveness)
+        await this.redis.setex(dedupeKey, 120, 'sent');
         console.log(`✅ Question ${questionNumber} marked as sent to ${to}`);
       } catch (error) {
         console.error('❌ Redis deduplication error:', error);
