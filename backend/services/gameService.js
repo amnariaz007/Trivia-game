@@ -485,14 +485,8 @@ class GameService {
             }
             
             setTimeout(async () => {
-              const queueService = require('./queueService');
-              const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
-              const isLocked = await queueService.isLocked(lockKey);
-              
-              if (!isLocked) {
-                console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1} (already answered)`);
-                await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
-              }
+              console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1} (already answered)`);
+              await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
             }, 1000);
           }
           
@@ -596,16 +590,8 @@ class GameService {
           
           // All players answered, process results immediately
           setTimeout(async () => {
-            const queueService = require('./queueService');
-            const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
-            const isLocked = await queueService.isLocked(lockKey);
-            
-            if (!isLocked) {
-              console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1}`);
-              await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
-            } else {
-              console.log(`🔒 Question results already being processed, skipping duplicate call`);
-            }
+            console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1}`);
+            await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
           }, 1000); // Reduced delay to 1 second for faster progression
         } else {
           console.log(`⏳ ${alivePlayers.length - answeredPlayers.length} players still need to answer, waiting...`);
@@ -839,29 +825,14 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
 
   // Process question results with Redis lock to prevent race conditions
   async processQuestionResultsWithLock(gameId, questionIndex, correctAnswer) {
-    const queueService = require('./queueService');
-    const lockKey = `question_results:${gameId}:${questionIndex}`;
-    
     try {
-      // Try to acquire lock
-      const lockAcquired = await queueService.acquireLock(lockKey, 30); // 30 second TTL
+      console.log(`🔓 Processing question results for game ${gameId}, question ${questionIndex + 1}`);
       
-      if (!lockAcquired) {
-        console.log(`🔒 Question results already being processed for game ${gameId}, question ${questionIndex + 1}`);
-        return; // Another process is already handling this
-      }
-      
-      console.log(`🔓 Acquired lock for question results: ${gameId}:${questionIndex}`);
-      
-      // Process the results
+      // Process the results directly
       await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
       
     } catch (error) {
       console.error('❌ Error in processQuestionResultsWithLock:', error);
-    } finally {
-      // Always release the lock
-      await queueService.releaseLock(lockKey);
-      console.log(`🔓 Released lock for question results: ${gameId}:${questionIndex}`);
     }
   }
 
