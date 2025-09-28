@@ -249,7 +249,7 @@ class QueueService {
   }
 
   async addMessage(type, data, options = {}) {
-    console.log(`📤 Adding message to queue: ${type}`, { to: data.to, messageLength: data.message?.length });
+    console.log(`📤 Adding message to queue: ${type}`, { to: data.to, messageLength: data.message?.length, gameId: data.gameId });
     
     if (!this.messageQueue) {
       console.log('⚠️  Message queue not available, skipping message');
@@ -393,6 +393,8 @@ class QueueService {
   async processQuestion(data) {
     const { to, questionText, options, questionNumber, correctAnswer, gameId } = data;
     
+    console.log(`🎯 Processing question ${questionNumber} for ${to} in game ${gameId}`);
+    
     // Create deduplication key for this question to this user (but be less aggressive)
     const dedupeKey = `question_sent:${gameId}:${questionNumber}:${to}`;
     
@@ -414,8 +416,11 @@ class QueueService {
       }
     }
     
+    console.log(`📤 Sending question ${questionNumber} to ${to} via WhatsApp service`);
     const whatsappService = require('./whatsappService');
-    return await whatsappService.sendQuestion(to, questionText, options, questionNumber, correctAnswer);
+    const result = await whatsappService.sendQuestion(to, questionText, options, questionNumber, correctAnswer);
+    console.log(`✅ Question ${questionNumber} sent to ${to}, result:`, result);
+    return result;
   }
 
   async processElimination(data) {

@@ -205,6 +205,7 @@ class GameService {
 
       // Start first question after 5 seconds
       setTimeout(() => {
+        console.log(`🚀 Starting first question for game ${gameId} after 5 second delay`);
         this.startQuestion(gameId, 0);
       }, 5000);
 
@@ -225,6 +226,8 @@ class GameService {
   // Start a specific question
   async startQuestion(gameId, questionIndex) {
     try {
+      console.log(`🎯 startQuestion called: gameId=${gameId}, questionIndex=${questionIndex}`);
+      
       // Use Redis lock to prevent race conditions
       const lockKey = `game_lock:${gameId}:question:${questionIndex}`;
       const lockAcquired = await this.acquireLock(lockKey, 30); // 30 second lock
@@ -242,6 +245,8 @@ class GameService {
         return;
       }
 
+      console.log(`🔍 Game state found: currentQuestion=${gameState.currentQuestion}, questionIndex=${questionIndex}, players=${gameState.players?.length || 0}`);
+
       // Check if a question is already running
       if (gameState.questionTimer) {
         console.log(`⚠️ Question timer already running for game ${gameId}, stopping previous timer`);
@@ -249,12 +254,14 @@ class GameService {
         gameState.questionTimer = null;
       }
 
-      // Check if we're already on this question
-      if (gameState.currentQuestion >= questionIndex) {
+      // Check if we're already on this question (but allow the first question to start)
+      if (gameState.currentQuestion > questionIndex) {
         console.log(`⚠️ Question ${questionIndex + 1} already processed or passed, skipping`);
         await this.releaseLock(lockKey);
         return;
       }
+
+      console.log(`✅ Question ${questionIndex + 1} is valid to start, proceeding...`);
 
       const { questions, players } = gameState;
 
@@ -289,6 +296,8 @@ class GameService {
       await game.save();
 
       // Send question to all alive players
+      console.log(`📤 Sending question ${questionIndex + 1} to ${players.filter(p => p.status === 'alive').length} alive players`);
+      
       for (const player of players) {
         if (player.status === 'alive') {
           console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.nickname} (${player.user.whatsapp_number})`);
@@ -303,6 +312,8 @@ class GameService {
             correctAnswer: question.correct_answer,
             timeLimit: 10
           });
+          
+          console.log(`📤 Queue job result for ${player.user.nickname}:`, job ? 'SUCCESS' : 'FAILED');
           
           // If queue failed, send directly
           if (!job) {

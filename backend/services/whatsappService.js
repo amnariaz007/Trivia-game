@@ -73,6 +73,8 @@ class WhatsAppService {
   // Send interactive message with buttons
   async sendInteractiveMessage(to, body, buttons) {
     try {
+      console.log(`🎯 sendInteractiveMessage called: to=${to}, body="${body}", buttons:`, buttons);
+      
       // Development mode safety check
       if (this.isDevelopment) {
         if (devConfig.development.disableWhatsAppMessaging) {
@@ -92,6 +94,8 @@ class WhatsAppService {
         }
       }
 
+      console.log(`📤 Making WhatsApp API call to ${to} with body: "${body}"`);
+      
       const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
         messaging_product: 'whatsapp',
         to: to,
@@ -111,7 +115,7 @@ class WhatsAppService {
         }
       });
       
-      console.log('✅ Interactive message sent:', response.data);
+      console.log('✅ Interactive message sent successfully:', response.data);
       return response.data;
     } catch (error) {
       console.error('❌ Error sending interactive message:', error.response?.data || error.message);
@@ -122,6 +126,10 @@ class WhatsAppService {
   // Send question with randomized answer buttons
   async sendQuestion(to, questionText, options, questionNumber, correctAnswer) {
     try {
+      console.log(`🎯 sendQuestion called: to=${to}, questionNumber=${questionNumber}, questionText="${questionText}"`);
+      console.log(`🎯 Options:`, options);
+      console.log(`🎯 Correct answer:`, correctAnswer);
+      
       // Ensure correct answer is always included in the 3 buttons
       const threeOptions = [correctAnswer];
       const otherOptions = options.filter(opt => opt !== correctAnswer);
@@ -136,7 +144,12 @@ class WhatsAppService {
       const randomizedOptions = threeOptions.sort(() => Math.random() - 0.5);
 
       const body = `Q${questionNumber}: ${questionText}`;
-      return await this.sendInteractiveMessage(to, body, randomizedOptions);
+      console.log(`📤 Sending interactive message to ${to}:`, body);
+      console.log(`📤 Buttons:`, randomizedOptions);
+      
+      const result = await this.sendInteractiveMessage(to, body, randomizedOptions);
+      console.log(`✅ Question sent successfully to ${to}:`, result);
+      return result;
     } catch (error) {
       console.error('❌ Error sending question:', error);
       throw error;
