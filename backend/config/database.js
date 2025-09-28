@@ -8,7 +8,7 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
   protocol: 'postgres',
   logging: false, // Disable SQL query logging
   define: {
-    underscored: true, // Always use snake_case to match database
+    underscored: false, // Use camelCase to match database
     timestamps: true
   },
       // Connection pool configuration for 1000+ users
