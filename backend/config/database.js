@@ -34,11 +34,11 @@ const testConnection = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connection established successfully.');
-    console.log('🔗 Connection pool configured for 200-500 users:');
-    console.log('   - Max connections: 50');
-    console.log('   - Min connections: 10');
-    console.log('   - Acquire timeout: 30s');
-    console.log('   - Idle timeout: 10s');
+    console.log('🔗 Connection pool configured for 1000+ users:');
+    console.log('   - Max connections: 100');
+    console.log('   - Min connections: 20');
+    console.log('   - Acquire timeout: 60s');
+    console.log('   - Idle timeout: 30s');
   } catch (error) {
     console.error('❌ Unable to connect to the database:', error);
     process.exit(1);

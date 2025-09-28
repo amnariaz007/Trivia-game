@@ -606,10 +606,16 @@ class GameService {
       } finally {
         // Always release the answer lock
         await queueService.releaseLock(answerLockKey);
+        // Always release the main game lock
+        await this.releaseLock(lockKey);
       }
 
     } catch (error) {
       console.error('❌ Error handling player answer:', error);
+      // Release the main game lock on error
+      if (lockKey) {
+        await this.releaseLock(lockKey);
+      }
       throw error;
     }
   }
@@ -623,10 +629,10 @@ class GameService {
       const options = [question.option_a, question.option_b, question.option_c, question.option_d];
       const questionNumber = gameState.currentQuestion + 1;
 
-      for (const [phoneNumber, player] of gameState.players) {
-        if (player.isAlive) {
+      for (const player of gameState.players) {
+        if (player.status === 'alive') {
           await queueService.addMessage('send_question', {
-            to: phoneNumber,
+            to: player.user.whatsapp_number,
             questionText: question.question_text,
             options,
             questionNumber,
@@ -636,7 +642,7 @@ class GameService {
         } else {
           // Send spectator update to eliminated players
           await queueService.addMessage('send_message', {
-            to: phoneNumber,
+            to: player.user.whatsapp_number,
             message: `👀 Q${questionNumber}: ${question.question_text}\n\nYou're watching as a spectator.`,
             gameId: gameId,
             messageType: 'spectator'
@@ -710,8 +716,7 @@ class GameService {
             { 
               status: 'eliminated',
               eliminated_at: new Date(),
-              eliminated_on_question: questionIndex + 1,
-              elimination_reason: 'timeout'
+              eliminated_by_question: questionIndex + 1
             },
             { 
               where: { 
@@ -781,7 +786,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         { 
           status: 'eliminated',
           eliminated_at: new Date(),
-          eliminated_on_question: gameState.currentQuestion + 1
+          eliminated_by_question: gameState.currentQuestion + 1
         },
         { 
           where: { 
@@ -868,8 +873,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
             { 
               status: 'eliminated',
               eliminated_at: new Date(),
-              eliminated_on_question: questionIndex + 1,
-              elimination_reason: 'wrong_answer'
+              eliminated_by_question: questionIndex + 1
             },
             { 
               where: { 
