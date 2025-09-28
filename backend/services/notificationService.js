@@ -61,7 +61,7 @@ class NotificationService {
 Game starts in 30 minutes!
 
 💰 Prize pool: $${game.prize_pool}
-⏰ Start time: ${new Date(game.start_time).toLocaleString()} GMT
+⏰ Start time: ${new Date(game.start_time).toLocaleString()} EST
 
 Get ready for sudden-death questions!`
         });
@@ -87,7 +87,7 @@ Get ready for sudden-death questions!`
         await queueService.addMessage('send_message', {
           to: player.user.whatsapp_number,
           message: `💰 Prize pool: $${game.prize_pool}
-⏰ Start time: ${new Date(game.start_time).toLocaleString()} GMT
+⏰ Start time: ${new Date(game.start_time).toLocaleString()} EST
 
 We will send you a reminder when the game starts.`
         });
