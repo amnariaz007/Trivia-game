@@ -515,7 +515,44 @@ class GameService {
         console.log(`🔍 Correct answer: "${currentQuestion.correct_answer}"`);
         console.log(`🔍 Is correct: ${isCorrect}`);
 
-        // Save to database
+        // Save to database - first ensure game exists in database
+        let gameExists = await Game.findByPk(gameId);
+        if (!gameExists) {
+          console.log(`⚠️ Game ${gameId} not found in database, creating it from Redis state`);
+          try {
+            // Create the game in database from Redis state
+            gameExists = await Game.create({
+              id: gameId,
+              status: 'in_progress',
+              current_question: gameState.currentQuestion,
+              total_questions: gameState.questions.length,
+              started_at: gameState.startTime instanceof Date ? gameState.startTime : new Date(gameState.startTime)
+            });
+            console.log(`✅ Created game ${gameId} in database`);
+          } catch (createError) {
+            console.error(`❌ Failed to create game ${gameId} in database:`, createError);
+            throw new Error(`Game ${gameId} not found in database and could not be created`);
+          }
+        }
+        
+        // Ensure user exists in database
+        const userExists = await User.findByPk(player.user.id);
+        if (!userExists) {
+          console.log(`⚠️ User ${player.user.id} not found in database, creating from Redis state`);
+          try {
+            await User.create({
+              id: player.user.id,
+              whatsapp_number: player.user.whatsapp_number,
+              nickname: player.user.nickname,
+              is_active: true
+            });
+            console.log(`✅ Created user ${player.user.id} in database`);
+          } catch (createError) {
+            console.error(`❌ Failed to create user ${player.user.id} in database:`, createError);
+            throw new Error(`User ${player.user.id} not found in database and could not be created`);
+          }
+        }
+        
         const startTime = gameState.startTime instanceof Date ? gameState.startTime : new Date(gameState.startTime);
         await PlayerAnswer.create({
           game_id: gameId,
