@@ -416,11 +416,12 @@ class GameService {
 
     // Handle player answer
   async handlePlayerAnswer(gameId, phoneNumber, answer) {
+    let lockKey = null; // Declare lockKey outside try block
     try {
       console.log(`🎯 handlePlayerAnswer called: gameId=${gameId}, phone=${phoneNumber}, answer="${answer}"`);
       
       // Use Redis lock to prevent race conditions when multiple players answer simultaneously
-      const lockKey = `game_lock:${gameId}:answer:${phoneNumber}`;
+      lockKey = `game_lock:${gameId}:answer:${phoneNumber}`;
       const lockAcquired = await this.acquireLock(lockKey, 10); // 10 second lock
       
       if (!lockAcquired) {
@@ -515,13 +516,13 @@ class GameService {
           console.log(`⚠️ Game ${gameId} not found in database, creating it from Redis state`);
           try {
             // Create the game in database from Redis state
-            gameExists = await Game.create({
-              id: gameId,
-              status: 'in_progress',
-              current_question: gameState.currentQuestion,
-              total_questions: gameState.questions.length,
-              started_at: gameState.startTime instanceof Date ? gameState.startTime : new Date(gameState.startTime)
-            });
+                  gameExists = await Game.create({
+                    id: gameId,
+                    status: 'in_progress',
+                    current_question: gameState.currentQuestion,
+                    total_questions: gameState.questions.length,
+                    start_time: gameState.startTime instanceof Date ? gameState.startTime : new Date(gameState.startTime)
+                  });
             console.log(`✅ Created game ${gameId} in database`);
           } catch (createError) {
             console.error(`❌ Failed to create game ${gameId} in database:`, createError);
