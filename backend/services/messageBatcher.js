@@ -174,12 +174,19 @@ class MessageBatcher {
    * @param {string} message - Message content
    */
   async sendSingleMessage(to, message) {
-    // This should integrate with your WhatsApp service
-    // For now, we'll just log it
-    console.log(`📤 Sending message to ${to}: ${message.substring(0, 50)}...`);
-    
-    // TODO: Integrate with actual WhatsApp service
-    // await whatsappService.sendMessage(to, message);
+    try {
+      console.log(`📤 Sending message to ${to}: ${message.substring(0, 50)}...`);
+      
+      // Import WhatsApp service and send the message
+      const whatsappService = require('./whatsappService');
+      const result = await whatsappService.sendTextMessage(to, message);
+      
+      console.log(`✅ Message sent successfully to ${to}`);
+      return result;
+    } catch (error) {
+      console.error(`❌ Failed to send message to ${to}:`, error.message);
+      throw error;
+    }
   }
 
   /**

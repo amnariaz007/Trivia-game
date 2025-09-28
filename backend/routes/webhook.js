@@ -472,7 +472,9 @@ async function handleJoinCommand(user) {
     if (!activeGame || activeGame.status !== 'pre_game') {
       await queueService.addMessage('send_message', {
         to: user.whatsapp_number,
-        message: '❌ No game is currently accepting registrations. Stay tuned for the next game announcement!'
+        message: '❌ No game is currently accepting registrations. Stay tuned for the next game announcement!',
+        priority: 'high',
+        messageType: 'join_response'
       });
       return;
     }
@@ -526,7 +528,9 @@ async function handleJoinCommand(user) {
 ⏰ Game starts at: ${gameTime} EST
 💰 Prize pool: $${prizePool}
 
-We will send you a reminder when the game starts.`
+We will send you a reminder when the game starts.`,
+      priority: 'high',
+      messageType: 'join_response'
     });
 
     console.log(`✅ User ${user.nickname} registered for game ${activeGame.id}`);
@@ -535,7 +539,9 @@ We will send you a reminder when the game starts.`
     console.error('❌ Error handling JOIN command:', error);
     await queueService.addMessage('send_message', {
       to: user.whatsapp_number,
-      message: '❌ Something went wrong. Please try again.'
+      message: '❌ Something went wrong. Please try again.',
+      priority: 'high',
+      messageType: 'join_response'
     });
   }
 }

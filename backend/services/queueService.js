@@ -112,17 +112,30 @@ class QueueService {
   
     try {
       console.log('🔄 Initializing Bull queues...');
+      console.log('🔍 Redis URL for queues:', process.env.REDIS_URL);
   
       // Just pass the URL (Bull handles redis:// vs rediss:// automatically)
       this.messageQueue = new Queue('whatsapp-messages', process.env.REDIS_URL);
       this.gameQueue = new Queue('game-timers', process.env.REDIS_URL);
   
+      // Add error handlers for queues
+      this.messageQueue.on('error', (error) => {
+        console.error('❌ Message queue error:', error);
+      });
+      
+      this.gameQueue.on('error', (error) => {
+        console.error('❌ Game queue error:', error);
+      });
+  
       this.setupQueueHandlers();
       this.setupQueueEvents();
   
       console.log('✅ Queues initialized successfully');
+      console.log('📊 Message queue ready:', !!this.messageQueue);
+      console.log('📊 Game queue ready:', !!this.gameQueue);
     } catch (error) {
       console.error('❌ Failed to initialize queues:', error.message);
+      console.error('❌ Queue initialization error details:', error);
       this.messageQueue = null;
       this.gameQueue = null;
     }
@@ -236,17 +249,41 @@ class QueueService {
   }
 
   async addMessage(type, data, options = {}) {
+    console.log(`📤 Adding message to queue: ${type}`, { to: data.to, messageLength: data.message?.length });
+    
     if (!this.messageQueue) {
       console.log('⚠️  Message queue not available, skipping message');
+      console.log('🔍 Queue status:', {
+        messageQueue: !!this.messageQueue,
+        gameQueue: !!this.gameQueue,
+        redis: !!this.redis,
+        redisConnected: this.redisConnected
+      });
       return null;
     }
 
     // Use batching for send_message type to handle 200+ users efficiently
     if (type === 'send_message') {
+      // For high priority messages (like JOIN responses), send immediately
+      if (data.priority === 'high' || data.messageType === 'join_response') {
+        console.log('⚡ Sending high priority message immediately');
+        try {
+          const whatsappService = require('./whatsappService');
+          const result = await whatsappService.sendTextMessage(data.to, data.message);
+          return { success: true, result };
+        } catch (error) {
+          console.error('❌ Failed to send immediate message:', error.message);
+          return null;
+        }
+      }
+      
+      // For normal messages, use batching
       try {
+        console.log('📦 Using message batcher for send_message');
         return await this.addBatchedMessage(data.to, data.message, data.priority || 'normal');
       } catch (error) {
         console.error('❌ Failed to add batched message:', error.message);
+        console.error('❌ Batcher error details:', error);
         return null;
       }
     }
