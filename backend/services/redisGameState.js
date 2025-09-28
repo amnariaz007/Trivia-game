@@ -78,7 +78,26 @@ class RedisGameState {
       const data = await this.redis.get(key);
       
       if (data) {
-        return JSON.parse(data);
+        const gameState = JSON.parse(data);
+        
+        // Convert string dates back to Date objects
+        if (gameState.startTime && typeof gameState.startTime === 'string') {
+          gameState.startTime = new Date(gameState.startTime);
+        }
+        if (gameState.questionStartTime && typeof gameState.questionStartTime === 'string') {
+          gameState.questionStartTime = new Date(gameState.questionStartTime);
+        }
+        
+        // Convert player dates
+        if (gameState.players) {
+          gameState.players.forEach(player => {
+            if (player.eliminatedAt && typeof player.eliminatedAt === 'string') {
+              player.eliminatedAt = new Date(player.eliminatedAt);
+            }
+          });
+        }
+        
+        return gameState;
       }
       return null;
     } catch (error) {

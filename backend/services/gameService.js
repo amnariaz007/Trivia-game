@@ -516,13 +516,14 @@ class GameService {
         console.log(`🔍 Is correct: ${isCorrect}`);
 
         // Save to database
+        const startTime = gameState.startTime instanceof Date ? gameState.startTime : new Date(gameState.startTime);
         await PlayerAnswer.create({
           game_id: gameId,
           user_id: player.user.id,
           question_id: currentQuestion.id,
           selected_answer: answer,
           is_correct: isCorrect,
-          response_time_ms: Date.now() - gameState.startTime.getTime(),
+          response_time_ms: Date.now() - startTime.getTime(),
           question_number: gameState.currentQuestion + 1
         });
 
