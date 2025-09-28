@@ -684,6 +684,16 @@ router.post('/games/:id/start', async (req, res) => {
       return res.status(404).json({ error: 'Game not found' });
     }
     
+    // Check if game has expired
+    if (game.status === 'expired') {
+      return res.status(400).json({ error: 'Cannot start an expired game. Game start time has passed.' });
+    }
+    
+    // Check if game start time has passed
+    if (new Date() > new Date(game.start_time)) {
+      return res.status(400).json({ error: 'Cannot start game. Start time has already passed.' });
+    }
+    
     if (game.questions.length === 0) {
       return res.status(400).json({ error: 'Game must have questions before starting' });
     }

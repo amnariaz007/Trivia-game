@@ -1194,6 +1194,46 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
     }
   }
 
+  // Notify users about expired games
+  async notifyExpiredGameUsers(gameId) {
+    try {
+      console.log(`📢 Notifying users about expired game ${gameId}`);
+      
+      const game = await Game.findByPk(gameId, {
+        include: [
+          { model: GamePlayer, as: 'players', include: [{ model: User, as: 'user' }] }
+        ]
+      });
+      
+      if (!game || !game.players) {
+        console.log(`❌ Game ${gameId} not found or has no players`);
+        return;
+      }
+      
+      const queueService = require('./queueService');
+      
+      for (const player of game.players) {
+        if (player.status === 'registered' || player.status === 'alive') {
+          await queueService.addMessage('send_message', {
+            to: player.user.whatsapp_number,
+            message: `⏰ Game Expired!\n\nThe QRush Trivia game you registered for has expired because the start time has passed.\n\n💰 Prize pool: $${game.prize_pool}\n🎮 Game: ${gameId.slice(0, 8)}...\n\nReply "PLAY" to get notified about the next game!`,
+            priority: 'high',
+            messageType: 'expired_game_notification'
+          });
+          
+          // Update player status to expired
+          player.status = 'expired';
+          await player.save();
+        }
+      }
+      
+      console.log(`✅ Notified ${game.players.length} users about expired game ${gameId}`);
+      
+    } catch (error) {
+      console.error(`❌ Error notifying users about expired game ${gameId}:`, error);
+    }
+  }
+
   // Cleanup all timers (for graceful shutdown)
   cleanupAllTimers() {
     console.log('🧹 Cleaning up all game timers...');

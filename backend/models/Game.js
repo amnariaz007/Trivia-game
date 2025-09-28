@@ -95,17 +95,35 @@ Game.getActiveGame = async function() {
   const now = new Date();
   
   // First, automatically expire any games that should have started but haven't
-  await this.update(
-    { status: 'expired' },
-    {
-      where: {
-        status: ['scheduled', 'pre_game'],
-        start_time: {
-          [Op.lt]: now
-        }
+  const expiredGames = await this.findAll({
+    where: {
+      status: ['scheduled', 'pre_game'],
+      start_time: {
+        [Op.lt]: now
       }
     }
-  );
+  });
+  
+  if (expiredGames.length > 0) {
+    // Update status to expired
+    await this.update(
+      { status: 'expired' },
+      {
+        where: {
+          status: ['scheduled', 'pre_game'],
+          start_time: {
+            [Op.lt]: now
+          }
+        }
+      }
+    );
+    
+    // Notify users about expired games
+    const gameService = require('../services/gameService');
+    for (const game of expiredGames) {
+      await gameService.notifyExpiredGameUsers(game.id);
+    }
+  }
   
   // Then find the current active game
   return this.findOne({
