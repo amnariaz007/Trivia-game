@@ -378,6 +378,20 @@ class GameService {
 
     // Simple timer countdown
     const timer = setInterval(async () => {
+      // Check if all players have answered before continuing timer
+      const currentGameState = await this.getGameState(gameId);
+      if (currentGameState) {
+        const alivePlayers = currentGameState.players.filter(p => p.status === 'alive');
+        const answeredPlayers = alivePlayers.filter(p => p.answer);
+        
+        if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
+          console.log(`⏰ All players answered, stopping timer early`);
+          clearInterval(timer);
+          gameState.questionTimer = null;
+          return;
+        }
+      }
+      
       timeLeft--;
       
       if (timeLeft <= 0) {
@@ -461,7 +475,15 @@ class GameService {
           const answeredPlayers = alivePlayers.filter(p => p.answer);
           
           if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
-            console.log(`🎯 All players answered, processing results for already answered player`);
+            console.log(`🎯 All players answered, clearing timer and processing results for already answered player`);
+            
+            // Clear the timer since all players have answered
+            if (gameState.questionTimer) {
+              clearInterval(gameState.questionTimer);
+              gameState.questionTimer = null;
+              console.log(`⏰ Cleared timer - all players answered (already answered case)`);
+            }
+            
             setTimeout(async () => {
               const queueService = require('./queueService');
               const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
@@ -525,7 +547,15 @@ class GameService {
         
         // Check if all alive players have answered
         if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
-          console.log(`🎯 All remaining players answered, processing results immediately`);
+          console.log(`🎯 All remaining players answered, clearing timer and processing results immediately`);
+          
+          // Clear the timer since all players have answered
+          if (gameState.questionTimer) {
+            clearInterval(gameState.questionTimer);
+            gameState.questionTimer = null;
+            console.log(`⏰ Cleared timer - all players answered`);
+          }
+          
           // All players answered, process results immediately
           setTimeout(async () => {
             const queueService = require('./queueService');
@@ -916,7 +946,11 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       }
       
       if (gameState.activeTimers) {
-        gameState.activeTimers.clear();
+        if (gameState.activeTimers instanceof Set) {
+          gameState.activeTimers.clear();
+        } else if (typeof gameState.activeTimers === 'object') {
+          gameState.activeTimers = new Set();
+        }
         console.log(`⏰ Emergency: Cleared all active timers for game ${gameId}`);
       }
 
@@ -981,9 +1015,14 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         console.log(`⏰ Cleared question timer for game ${gameId}`);
       }
       
-      // Clear active timers set
+      // Clear active timers set (handle both Set and object from Redis)
       if (gameState.activeTimers) {
-        gameState.activeTimers.clear();
+        if (gameState.activeTimers instanceof Set) {
+          gameState.activeTimers.clear();
+        } else if (typeof gameState.activeTimers === 'object') {
+          // Convert back to Set if it was serialized from Redis
+          gameState.activeTimers = new Set();
+        }
         console.log(`⏰ Cleared active timers set for game ${gameId}`);
       }
       
@@ -1143,7 +1182,11 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       }
       
       if (gameState.activeTimers) {
-        gameState.activeTimers.clear();
+        if (gameState.activeTimers instanceof Set) {
+          gameState.activeTimers.clear();
+        } else if (typeof gameState.activeTimers === 'object') {
+          gameState.activeTimers = new Set();
+        }
         console.log(`⏰ Cleared active timers for game ${gameId}`);
       }
     }
