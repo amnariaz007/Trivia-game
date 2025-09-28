@@ -52,8 +52,8 @@ const Game = sequelize.define('Game', {
 }, {
   tableName: 'games',
   timestamps: true,
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
   indexes: [
     {
       fields: ['status']
