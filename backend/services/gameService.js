@@ -223,10 +223,26 @@ class GameService {
         return;
       }
 
+      // Get current game state
       const gameState = await this.getGameState(gameId);
       if (!gameState) {
+        console.log(`❌ Game state not found for ${gameId}`);
         await this.releaseLock(lockKey);
-        throw new Error('Game not found');
+        return;
+      }
+
+      // Check if a question is already running
+      if (gameState.questionTimer) {
+        console.log(`⚠️ Question timer already running for game ${gameId}, stopping previous timer`);
+        clearInterval(gameState.questionTimer);
+        gameState.questionTimer = null;
+      }
+
+      // Check if we're already on this question
+      if (gameState.currentQuestion >= questionIndex) {
+        console.log(`⚠️ Question ${questionIndex + 1} already processed or passed, skipping`);
+        await this.releaseLock(lockKey);
+        return;
       }
 
       const { questions, players } = gameState;
@@ -350,10 +366,19 @@ class GameService {
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
       console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations`);
+      
+      // Clear any existing timers first
       const gameState = await this.getGameState(gameId);
       if (!gameState) {
         console.log(`❌ Game state not found for ${gameId} during timeout`);
         return;
+      }
+
+      // Clear the question timer
+      if (gameState.questionTimer) {
+        clearInterval(gameState.questionTimer);
+        gameState.questionTimer = null;
+        console.log(`🧹 Cleared question timer for game ${gameId}`);
       }
 
       const game = await Game.findByPk(gameId, {
@@ -491,13 +516,11 @@ class GameService {
       
       console.log(`🔍 Answer check: ${answeredPlayers.length}/${alivePlayers.length} players answered`);
       
-      // Only process results immediately if player answered incorrectly
-      // For correct answers, wait for the timer to expire
-      if (!isCorrect) {
-        console.log(`🎯 Player answered incorrectly, processing results immediately`);
-        // Player answered incorrectly, process results immediately with lock
+      // Check if all alive players have answered
+      if (answeredPlayers.length === alivePlayers.length) {
+        console.log(`🎯 All remaining players answered, processing results immediately`);
+        // All players answered, process results immediately
         setTimeout(async () => {
-          // Check if results are already being processed
           const queueService = require('./queueService');
           const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
           const isLocked = await queueService.isLocked(lockKey);
@@ -509,8 +532,8 @@ class GameService {
           }
         }, 2000); // 2 second delay to show the "locked in" message
       } else {
-        console.log(`✅ Player answered correctly, waiting for timer to expire`);
-        // Player answered correctly, wait for the timer to expire naturally
+        console.log(`⏳ ${alivePlayers.length - answeredPlayers.length} players still need to answer, waiting...`);
+        // Not all players answered yet, continue waiting
       }
 
         return {
