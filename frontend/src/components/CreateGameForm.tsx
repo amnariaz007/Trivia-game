@@ -55,7 +55,8 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
       });
       onGameCreated(result.id);
     } catch (error) {
-      setMessage('Error creating game. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setMessage('Error creating game: ' + errorMessage);
     } finally {
       setLoading(false);
     }

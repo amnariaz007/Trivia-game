@@ -27,8 +27,9 @@ export default function UsersList() {
       const usersData = await apiService.getUsers();
       setUsers(usersData);
     } catch (error) {
-      setError('Failed to load users');
-      console.error('Error loading users:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setError('Failed to load users: ' + errorMessage);
+      console.error('Error loading users:', errorMessage);
     } finally {
       setLoading(false);
     }

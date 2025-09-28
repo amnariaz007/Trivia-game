@@ -44,7 +44,8 @@ export default function DashboardPage() {
       setStats(statsData);
       setGames(gamesData);
     } catch (error) {
-      console.error('Error loading dashboard:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Error loading dashboard:', errorMessage);
     } finally {
       setLoadingStats(false);
     }

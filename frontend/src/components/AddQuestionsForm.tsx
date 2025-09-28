@@ -35,7 +35,8 @@ export default function AddQuestionsForm({ onQuestionsAdded, gameId: propGameId 
       }
       onQuestionsAdded();
     } catch (error) {
-      setMessage('Error importing CSV file. Check file format and try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setMessage('Error importing CSV file: ' + errorMessage);
     } finally {
       setLoading(false);
       // Reset file input

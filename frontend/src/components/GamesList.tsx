@@ -30,7 +30,8 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
       alert('Registration started successfully!');
       onGameUpdated();
     } catch (error) {
-      alert('Error starting registration');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert('Error starting registration: ' + errorMessage);
     } finally {
       setLoading(null);
     }
@@ -43,7 +44,8 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
       alert('Game started successfully!');
       onGameUpdated();
     } catch (error) {
-      alert('Error starting game');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert('Error starting game: ' + errorMessage);
     } finally {
       setLoading(null);
     }
@@ -71,7 +73,8 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
       alert(`🚨 Game ended successfully!\n\nWinners: ${result.winners.join(', ')}\nWinner Count: ${result.winnerCount}`);
       onGameUpdated();
     } catch (error) {
-      alert('❌ Error ending game: ' + (error.message || 'Unknown error'));
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert('❌ Error ending game: ' + errorMessage);
     } finally {
       setLoading(null);
     }
@@ -92,7 +95,8 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
       
       alert('CSV exported successfully!');
     } catch (error) {
-      alert('Error exporting CSV');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert('Error exporting CSV: ' + errorMessage);
     } finally {
       setLoading(null);
     }
