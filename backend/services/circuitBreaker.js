@@ -22,6 +22,24 @@ class CircuitBreaker {
     this.successThreshold = 5; // Close circuit after 5 successes
   }
 
+  // Check if circuit breaker allows execution
+  canExecute(serviceName) {
+    const circuit = this.getCircuit(serviceName);
+    
+    if (circuit.state === this.states.OPEN) {
+      if (this.shouldAttemptReset(serviceName)) {
+        circuit.state = this.states.HALF_OPEN;
+        console.log(`🔄 Circuit breaker for ${serviceName} moved to HALF_OPEN`);
+        return true;
+      } else {
+        console.log(`🚫 Circuit breaker for ${serviceName} is OPEN, blocking request`);
+        return false;
+      }
+    }
+    
+    return true; // CLOSED or HALF_OPEN states allow execution
+  }
+
   // Execute function with circuit breaker protection
   async execute(serviceName, operation, fallback = null) {
     const circuit = this.getCircuit(serviceName);
@@ -181,3 +199,4 @@ class CircuitBreaker {
 }
 
 module.exports = CircuitBreaker;
+
