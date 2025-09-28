@@ -225,11 +225,14 @@ class GameService {
 
   // Start a specific question
   async startQuestion(gameId, questionIndex) {
+    // Declare lockKey outside try block to fix scope issue
+    let lockKey = null;
+    
     try {
       console.log(`🎯 startQuestion called: gameId=${gameId}, questionIndex=${questionIndex}`);
       
       // Use Redis lock to prevent race conditions
-      const lockKey = `game_lock:${gameId}:question:${questionIndex}`;
+      lockKey = `game_lock:${gameId}:question:${questionIndex}`;
       const lockAcquired = await this.acquireLock(lockKey, 30); // 30 second lock
       
       if (!lockAcquired) {
@@ -276,9 +279,6 @@ class GameService {
       gameState.currentQuestion = questionIndex;
       gameState.questionStartTime = new Date();
       
-      // Save updated game state to Redis
-      await this.setGameState(gameId, gameState);
-
       // Reset player answer states for new question
       for (const player of players) {
         if (player.status === 'alive') {
@@ -287,11 +287,16 @@ class GameService {
         }
       }
 
-      // Save updated game state to Redis before sending questions
+      // Save updated game state to Redis once (optimized)
       await this.setGameState(gameId, gameState);
 
-      // Update game in database
+      // Update game in database with null check
       const game = await Game.findByPk(gameId);
+      if (!game) {
+        console.error(`❌ Game not found in database: ${gameId}`);
+        throw new Error(`Game ${gameId} not found in database`);
+      }
+      
       game.current_question = questionIndex;
       await game.save();
 
@@ -302,34 +307,33 @@ class GameService {
         if (player.status === 'alive') {
           console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.nickname} (${player.user.whatsapp_number})`);
           
-          // Try queue first, fallback to direct send
-          const job = await queueService.addMessage('send_question', {
-            to: player.user.whatsapp_number,
-            gameId,
-            questionNumber: questionIndex + 1,
-            questionText: question.question_text,
-            options: [question.option_a, question.option_b, question.option_c, question.option_d],
-            correctAnswer: question.correct_answer,
-            timeLimit: 10
-          });
-          
-          console.log(`📤 Queue job result for ${player.user.nickname}:`, job ? 'SUCCESS' : 'FAILED');
-          
-          // If queue failed, send directly
-          if (!job) {
-            console.log(`⚠️ Queue failed for question, sending directly to ${player.user.whatsapp_number}`);
+          // Send question directly for better reliability
+          try {
+            const whatsappService = require('./whatsappService');
+            await whatsappService.sendQuestion(
+              player.user.whatsapp_number,
+              question.question_text,
+              [question.option_a, question.option_b, question.option_c, question.option_d],
+              questionIndex + 1,
+              question.correct_answer
+            );
+            console.log(`✅ Question sent to ${player.user.nickname}`);
+          } catch (error) {
+            console.error(`❌ Failed to send question to ${player.user.nickname}:`, error);
+            // Try queue as fallback
             try {
-              const whatsappService = require('./whatsappService');
-              await whatsappService.sendQuestion(
-                player.user.whatsapp_number,
-                question.question_text,
-                [question.option_a, question.option_b, question.option_c, question.option_d],
-                questionIndex + 1,
-                question.correct_answer
-              );
-              console.log(`✅ Question sent directly to ${player.user.nickname}`);
-            } catch (error) {
-              console.error(`❌ Failed to send question directly to ${player.user.nickname}:`, error);
+              const job = await queueService.addMessage('send_question', {
+                to: player.user.whatsapp_number,
+                gameId,
+                questionNumber: questionIndex + 1,
+                questionText: question.question_text,
+                options: [question.option_a, question.option_b, question.option_c, question.option_d],
+                correctAnswer: question.correct_answer,
+                timeLimit: 10
+              });
+              console.log(`📤 Queue fallback for ${player.user.nickname}:`, job ? 'SUCCESS' : 'FAILED');
+            } catch (queueError) {
+              console.error(`❌ Queue fallback also failed for ${player.user.nickname}:`, queueError);
             }
           }
         }
@@ -345,13 +349,15 @@ class GameService {
 
     } catch (error) {
       console.error('❌ Error starting question:', error);
-      // Release lock on error
-      await this.releaseLock(lockKey);
+      // Release lock on error if it was acquired
+      if (lockKey) {
+        await this.releaseLock(lockKey);
+      }
       throw error;
     }
   }
 
-  // Start question timer (single synchronized timer per question)
+  // Start question timer (simplified and reliable)
   async startQuestionTimer(gameId, questionIndex, totalSeconds) {
     const gameState = await this.getGameState(gameId);
     if (!gameState) return;
@@ -363,34 +369,19 @@ class GameService {
       gameState.questionTimer = null;
     }
 
-    // Check if timer is already running for this question
-    const timerKey = `timer_${gameId}_${questionIndex}`;
-    if (gameState.activeTimers && gameState.activeTimers.has(timerKey)) {
-      console.log(`⏰ Timer already running for question ${questionIndex + 1}, skipping`);
-      return;
-    }
-
-    // Initialize active timers set if not exists
-    if (!gameState.activeTimers) {
-      gameState.activeTimers = new Set();
-    }
-
-    // Mark this timer as active
-    gameState.activeTimers.add(timerKey);
-    console.log(`⏰ Starting synchronized timer for question ${questionIndex + 1}`);
+    console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s)`);
 
     let timeLeft = totalSeconds;
     
     // Send initial timer
     await this.sendTimerUpdate(gameId, questionIndex, timeLeft);
 
-    // Single synchronized timer countdown
+    // Simple timer countdown
     const timer = setInterval(async () => {
       timeLeft--;
       
       if (timeLeft <= 0) {
         clearInterval(timer);
-        gameState.activeTimers.delete(timerKey);
         gameState.questionTimer = null;
         console.log(`⏰ Question ${questionIndex + 1} time expired`);
         await this.handleQuestionTimeout(gameId, questionIndex);
@@ -408,72 +399,6 @@ class GameService {
     gameState.questionTimer = timer;
   }
 
-  // Handle question timeout
-  async handleQuestionTimeout(gameId, questionIndex) {
-    try {
-      console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations`);
-      
-      // Clear any existing timers first
-      const gameState = await this.getGameState(gameId);
-      if (!gameState) {
-        console.log(`❌ Game state not found for ${gameId} during timeout`);
-        return;
-      }
-
-      // Clear the question timer
-      if (gameState.questionTimer) {
-        clearInterval(gameState.questionTimer);
-        gameState.questionTimer = null;
-        console.log(`🧹 Cleared question timer for game ${gameId}`);
-      }
-
-      // Clear active timers set
-      if (gameState.activeTimers) {
-        gameState.activeTimers.clear();
-        console.log(`🧹 Cleared active timers set for game ${gameId}`);
-      }
-
-      const question = gameState.questions[questionIndex];
-      if (!question) {
-        console.log(`❌ Question ${questionIndex + 1} not found in game state`);
-        return;
-      }
-
-      const correctAnswer = question.correct_answer;
-
-      // Eliminate players who haven't answered
-      for (const player of gameState.players) {
-        if (player.status === 'alive' && !player.answer) {
-          player.status = 'eliminated';
-          player.eliminatedAt = new Date();
-          player.eliminatedOnQuestion = questionIndex + 1;
-          player.eliminationReason = 'timeout';
-          
-          console.log(`⏰ Player ${player.user.nickname} eliminated for timeout on Q${questionIndex + 1}`);
-          
-          // Send elimination message
-          await queueService.addMessage('send_message', {
-            to: player.user.whatsapp_number,
-            message: `⏰ Time's up! You didn't answer in time and have been eliminated.
-
-❌ Eliminated on: Question ${questionIndex + 1}
-🎮 Game: ${gameId.slice(0, 8)}...
-
-Stick around to watch the finish! Reply "PLAY" for the next game.`
-          });
-        }
-      }
-
-      // Save updated game state
-      await this.setGameState(gameId, gameState);
-
-      // Send results to all players (this will handle game continuation)
-      await this.processQuestionResultsWithLock(gameId, questionIndex, correctAnswer);
-
-    } catch (error) {
-      console.error('❌ Error handling question timeout:', error);
-    }
-  }
 
     // Handle player answer
   async handlePlayerAnswer(gameId, phoneNumber, answer) {
@@ -561,74 +486,63 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         player.answerTime = Date.now();
         console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
         
-        // Save updated game state to Redis immediately
-        await this.setGameState(gameId, gameState);
-        
-        // Immediately send confirmation to player that their answer is locked
+        const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
+      
+        console.log(`🔍 Answer comparison:`);
+        console.log(`🔍 Player answer: "${answer}"`);
+        console.log(`🔍 Correct answer: "${currentQuestion.correct_answer}"`);
+        console.log(`🔍 Is correct: ${isCorrect}`);
+
+        // Save to database
+        await PlayerAnswer.create({
+          game_id: gameId,
+          user_id: player.user.id,
+          question_id: currentQuestion.id,
+          selected_answer: answer,
+          is_correct: isCorrect,
+          response_time_ms: Date.now() - gameState.startTime.getTime(),
+          question_number: gameState.currentQuestion + 1
+        });
+
+        console.log(`📝 Player ${player.user.nickname} answered: ${answer} (${isCorrect ? 'CORRECT' : 'WRONG'})`);
+
+        // Send single confirmation message
         await queueService.addMessage('send_message', {
-          to: player.user.whatsapp_number,
-          message: '✅ Answer locked in! Please wait until the next round.',
-          gameId: gameId,
-          messageType: 'answer_confirmation'
+          to: phoneNumber,
+          message: `✅ Answer locked in! Please wait until the next round.`
         });
         
         console.log(`⏰ Player ${player.user.nickname} answered, timer will continue for other players only`);
 
-        const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
-      
-      console.log(`🔍 Answer comparison:`);
-      console.log(`🔍 Player answer: "${answer}"`);
-      console.log(`🔍 Correct answer: "${currentQuestion.correct_answer}"`);
-      console.log(`🔍 Is correct: ${isCorrect}`);
+        // Save updated game state to Redis after processing
+        await this.setGameState(gameId, gameState);
 
-      // Save to database
-      await PlayerAnswer.create({
-        game_id: gameId,
-        user_id: player.user.id,
-        question_id: currentQuestion.id,
-        selected_answer: answer,
-        is_correct: isCorrect,
-        response_time_ms: Date.now() - gameState.startTime.getTime(),
-        question_number: gameState.currentQuestion + 1
-      });
-
-      console.log(`📝 Player ${player.user.nickname} answered: ${answer} (${isCorrect ? 'CORRECT' : 'WRONG'})`);
-
-      // Send confirmation message
-      await queueService.addMessage('send_message', {
-        to: phoneNumber,
-        message: `✅ Answer locked in! Please wait until the next round.`
-      });
-
-      // Check if all alive players have answered
-      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
-      const answeredPlayers = alivePlayers.filter(p => p.answer);
-      
-      console.log(`🔍 Answer check: ${answeredPlayers.length}/${alivePlayers.length} players answered`);
-      
-      // Save updated game state after recording answer
-      await this.setGameState(gameId, gameState);
-      
-      // Check if all alive players have answered
-      if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
-        console.log(`🎯 All remaining players answered, processing results immediately`);
-        // All players answered, process results immediately
-        setTimeout(async () => {
-          const queueService = require('./queueService');
-          const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
-          const isLocked = await queueService.isLocked(lockKey);
-          
-          if (!isLocked) {
-            console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1}`);
-            await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
-          } else {
-            console.log(`🔒 Question results already being processed, skipping duplicate call`);
-          }
-        }, 1000); // Reduced delay to 1 second for faster progression
-      } else {
-        console.log(`⏳ ${alivePlayers.length - answeredPlayers.length} players still need to answer, waiting...`);
-        // Not all players answered yet, continue waiting
-      }
+        // Check if all alive players have answered
+        const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+        const answeredPlayers = alivePlayers.filter(p => p.answer);
+        
+        console.log(`🔍 Answer check: ${answeredPlayers.length}/${alivePlayers.length} players answered`);
+        
+        // Check if all alive players have answered
+        if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
+          console.log(`🎯 All remaining players answered, processing results immediately`);
+          // All players answered, process results immediately
+          setTimeout(async () => {
+            const queueService = require('./queueService');
+            const lockKey = `question_results:${gameId}:${gameState.currentQuestion}`;
+            const isLocked = await queueService.isLocked(lockKey);
+            
+            if (!isLocked) {
+              console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1}`);
+              await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
+            } else {
+              console.log(`🔒 Question results already being processed, skipping duplicate call`);
+            }
+          }, 1000); // Reduced delay to 1 second for faster progression
+        } else {
+          console.log(`⏳ ${alivePlayers.length - answeredPlayers.length} players still need to answer, waiting...`);
+          // Not all players answered yet, continue waiting
+        }
 
         return {
           correct: answer === gameState.questions[gameState.currentQuestion].correct_answer,
