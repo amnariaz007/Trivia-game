@@ -151,6 +151,148 @@ router.get('/users', async (req, res) => {
   }
 });
 
+// Delete a specific user
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await User.findByPk(id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    await user.destroy();
+    
+    console.log(`🗑️  Deleted user: ${user.nickname} (${user.whatsapp_number})`);
+    
+    res.json({ 
+      success: true, 
+      message: 'User deleted successfully',
+      deletedUser: {
+        id: user.id,
+        nickname: user.nickname,
+        whatsapp_number: user.whatsapp_number
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error deleting user:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Bulk delete users (keep only specified numbers)
+router.post('/users/bulk-delete', async (req, res) => {
+  try {
+    const { keepNumbers = [] } = req.body;
+    
+    if (!Array.isArray(keepNumbers)) {
+      return res.status(400).json({ error: 'keepNumbers must be an array' });
+    }
+    
+    // Get current user count
+    const totalUsers = await User.count();
+    console.log(`📊 Current total users: ${totalUsers}`);
+    
+    // Find users to keep
+    const usersToKeep = await User.findAll({
+      where: { whatsapp_number: { [require('sequelize').Op.in]: keepNumbers } }
+    });
+    
+    console.log(`✅ Users to keep: ${usersToKeep.length}`);
+    usersToKeep.forEach(user => {
+      console.log(`  - ${user.nickname} (${user.whatsapp_number})`);
+    });
+    
+    // Delete all other users
+    const deletedCount = await User.destroy({
+      where: { 
+        whatsapp_number: { 
+          [require('sequelize').Op.notIn]: keepNumbers 
+        } 
+      }
+    });
+    
+    console.log(`🗑️  Deleted ${deletedCount} users`);
+    
+    // Get final user count
+    const finalCount = await User.count();
+    
+    res.json({
+      success: true,
+      message: 'Bulk deletion completed',
+      deletedCount,
+      keptCount: usersToKeep.length,
+      finalCount,
+      keptUsers: usersToKeep.map(user => ({
+        id: user.id,
+        nickname: user.nickname,
+        whatsapp_number: user.whatsapp_number
+      }))
+    });
+  } catch (error) {
+    console.error('❌ Error in bulk delete:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Restore users from backup data
+router.post('/users/restore', async (req, res) => {
+  try {
+    const { users } = req.body;
+    
+    if (!Array.isArray(users)) {
+      return res.status(400).json({ error: 'users must be an array' });
+    }
+    
+    console.log(`🔄 Restoring ${users.length} users...`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+    
+    for (const userData of users) {
+      try {
+        await User.findOrCreate({
+          where: { whatsapp_number: userData.whatsapp_number },
+          defaults: {
+            nickname: userData.nickname,
+            whatsapp_number: userData.whatsapp_number,
+            is_active: userData.is_active !== undefined ? userData.is_active : true,
+            created_at: userData.created_at,
+            updated_at: userData.updated_at,
+            last_activity: userData.last_activity
+          }
+        });
+        
+        successCount++;
+        console.log(`✅ Restored: ${userData.nickname} (${userData.whatsapp_number})`);
+        
+      } catch (error) {
+        errorCount++;
+        errors.push({
+          user: userData.nickname,
+          error: error.message
+        });
+        console.log(`❌ Failed to restore ${userData.nickname}: ${error.message}`);
+      }
+    }
+    
+    console.log(`📊 Restoration complete: ${successCount}/${users.length} users restored`);
+    
+    res.json({
+      success: true,
+      message: 'User restoration completed',
+      totalUsers: users.length,
+      successCount,
+      errorCount,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (error) {
+    console.error('❌ Error restoring users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get all games
 router.get('/games', async (req, res) => {
   try {
@@ -186,7 +328,7 @@ router.get('/games', async (req, res) => {
 // Create a new game
 router.post('/games', async (req, res) => {
   try {
-    const { startTime, prizePool, totalQuestions } = req.body;
+    const { startTime, prizePool, totalQuestions, testMode } = req.body;
     
     if (!startTime || !prizePool) {
       return res.status(400).json({ error: 'Start time and prize pool are required' });
@@ -199,13 +341,52 @@ router.post('/games', async (req, res) => {
       status: 'scheduled'
     });
 
-    // Schedule reminders for the new game
-    const notificationService = require('../services/notificationService');
-    await notificationService.scheduleGameReminders(game.id);
+    // If test mode, only notify test users
+    if (testMode) {
+      console.log(`🧪 Test game created: ${game.id} - Only test users will be notified`);
+      
+      // Create test users if they don't exist (from central config)
+      const testUsersConfig = require('../config/testUsers');
+      const testUsers = testUsersConfig.testUsers;
+      
+      for (const userData of testUsers) {
+        await User.findOrCreate({
+          where: { whatsapp_number: userData.whatsapp_number },
+          defaults: {
+            nickname: userData.nickname,
+            is_active: true,
+            registration_completed: true,
+            last_activity: new Date()
+          }
+        });
+      }
+      
+      // Only send notifications to test users
+      const queueService = require('../services/queueService');
+      const gameTime = new Date(game.start_time).toLocaleString();
+      
+      for (const userData of testUsers) {
+        await queueService.addMessage('send_message', {
+          to: userData.whatsapp_number,
+          message: `🎮 New QRush Trivia Game Available!
+
+⏰ Game starts at: ${gameTime} EST
+💰 Prize pool: $${game.prize_pool}
+
+Reply "JOIN" to register for this game!
+Only registered players will receive game notifications.`
+        });
+      }
+      
+      console.log(`✅ Test notifications sent to ${testUsers.length} test users only`);
+    } else {
+      // Normal game - schedule reminders for all users
+      const notificationService = require('../services/notificationService');
+      await notificationService.scheduleGameReminders(game.id);
+      console.log(`✅ Game created and reminders scheduled: ${game.id}`);
+    }
     
-    console.log(`✅ Game created and reminders scheduled: ${game.id}`);
-    
-    res.status(201).json(game);
+    res.status(201).json({ ...game.toJSON(), testMode: !!testMode });
   } catch (error) {
     console.error('❌ Error creating game:', error);
     res.status(500).json({ error: 'Internal server error' });
