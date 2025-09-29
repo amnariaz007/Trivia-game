@@ -23,6 +23,13 @@ interface GamesListProps {
 export default function GamesList({ games, onGameUpdated }: GamesListProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
+  // Helper function to check if game is expired
+  const isGameExpired = (game: Game) => {
+    const gameStartTime = new Date(game.start_time);
+    const now = new Date();
+    return now > gameStartTime;
+  };
+
   const handleStartRegistration = async (gameId: string) => {
     // Check if game has expired
     const game = games.find(g => g.id === gameId);
@@ -196,20 +203,28 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
                   {game.status === 'scheduled' && (
                     <button
                       onClick={() => handleStartRegistration(game.id)}
-                      disabled={loading === game.id}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium disabled:opacity-50"
+                      disabled={loading === game.id || isGameExpired(game)}
+                      className={`px-3 py-1 rounded text-sm font-medium disabled:opacity-50 ${
+                        isGameExpired(game) 
+                          ? 'bg-gray-400 text-white cursor-not-allowed' 
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
                     >
-                      {loading === game.id ? 'Starting...' : 'Start Registration'}
+                      {loading === game.id ? 'Starting...' : isGameExpired(game) ? '⏰ EXPIRED' : 'Start Registration'}
                     </button>
                   )}
                   
                   {game.status === 'pre_game' && (
                     <button
                       onClick={() => handleStartGame(game.id)}
-                      disabled={loading === game.id}
-                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium disabled:opacity-50"
+                      disabled={loading === game.id || isGameExpired(game)}
+                      className={`px-3 py-1 rounded text-sm font-medium disabled:opacity-50 ${
+                        isGameExpired(game) 
+                          ? 'bg-gray-400 text-white cursor-not-allowed' 
+                          : 'bg-green-600 hover:bg-green-700 text-white'
+                      }`}
                     >
-                      {loading === game.id ? 'Starting...' : 'Start Game'}
+                      {loading === game.id ? 'Starting...' : isGameExpired(game) ? '⏰ EXPIRED' : 'Start Game'}
                     </button>
                   )}
                   
