@@ -961,7 +961,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         throw new Error('Game not found or not in progress');
       }
 
-      // Immediately stop all timers
+      // Immediately stop all timers and clear game state
       if (gameState.questionTimer) {
         clearInterval(gameState.questionTimer);
         gameState.questionTimer = null;
@@ -977,9 +977,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         console.log(`⏰ Emergency: Cleared all active timers for game ${gameId}`);
       }
 
-      // Send emergency game end message to all players
-      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+      // Send emergency game end message to all alive players first
       const queueService = require('./queueService');
+      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
       
       for (const player of alivePlayers) {
         await queueService.addMessage('send_message', {
@@ -990,11 +990,25 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         });
       }
 
+      // Mark all players as eliminated to stop any further processing
+      for (const player of gameState.players) {
+        if (player.status === 'alive') {
+          player.status = 'eliminated';
+          player.eliminatedAt = new Date();
+          player.eliminatedOnQuestion = gameState.currentQuestion + 1;
+          player.eliminationReason = 'admin_emergency_end';
+        }
+      }
+
       // Clear deduplication keys
       await queueService.clearGameDeduplication(gameId);
       
-      // Remove from active games
+      // Remove from active games and Redis
       this.activeGames.delete(gameId);
+      if (this.redisGameState.isAvailable()) {
+        await this.redisGameState.deleteGameState(gameId);
+        console.log(`🧹 Emergency: Game state removed from Redis for: ${gameId}`);
+      }
       console.log(`🧹 Emergency: Game state removed for: ${gameId}`);
 
       // Update database status
