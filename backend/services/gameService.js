@@ -408,10 +408,12 @@ class GameService {
       if (timeLeft <= 0) {
         clearInterval(timer);
         gameState.questionTimer = null;
-        console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout immediately`);
+        console.log(`⏰ Question ${questionIndex + 1} time expired - giving 2 second grace period for answers`);
         
-        // SIMPLE: Process timeout immediately, no grace period
-        await this.handleQuestionTimeout(gameId, questionIndex);
+        // Give a 2-second grace period for answers that are still being processed
+        setTimeout(async () => {
+          await this.handleQuestionTimeout(gameId, questionIndex);
+        }, 2000);
         return;
       }
 
@@ -449,14 +451,18 @@ class GameService {
         throw new Error('Game not found or not active');
       }
 
-      // SIMPLE: Just check if the question is still the current one
-      if (gameState.currentQuestion !== questionIndex) {
-        console.log(`⏰ Answer too late for ${phoneNumber} - question ${questionIndex + 1} already finished`);
+      // Check if the question is still active (within 10 seconds + 2 second grace period)
+      const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
+      const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
+      const maxAnswerTime = 12000; // 10 seconds + 2 second grace period
+      
+      if (timeSinceQuestionStart > maxAnswerTime) {
+        console.log(`⏰ Answer too late for ${phoneNumber} - ${timeSinceQuestionStart}ms since question start`);
         await this.releaseLock(lockKey);
         return { message: 'answer_too_late' };
       }
       
-      console.log(`✅ Answer from ${phoneNumber} accepted for question ${questionIndex + 1}`);
+      console.log(`✅ Answer from ${phoneNumber} is within time window: ${timeSinceQuestionStart}ms since question start`);
 
       const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
       if (!player) {
@@ -737,7 +743,9 @@ class GameService {
   // Handle question timeout - eliminate players who didn't answer
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
-      // SIMPLE: No delays, just process immediately
+      // Add delay to prevent race condition with answer processing
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+      
       const gameState = await this.getGameState(gameId);
       if (!gameState) return;
 
@@ -752,11 +760,11 @@ class GameService {
       
       console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations`);
 
-      // SIMPLE LOGIC: Only eliminate players with NO answer
+      // Eliminate players who didn't answer
       for (const player of players) {
         console.log(`🔍 Checking player ${player.user.nickname}: status=${player.status}, answer="${player.answer}"`);
         
-        // SIMPLE: Only eliminate if player is alive AND has NO answer
+        // Only eliminate if player is alive AND has NO answer (timeout)
         if (player.status === 'alive' && (!player.answer || player.answer.trim() === '')) {
           // Eliminate player for not answering
           player.status = 'eliminated';
