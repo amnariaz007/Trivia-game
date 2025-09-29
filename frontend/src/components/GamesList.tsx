@@ -151,7 +151,9 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
+    // Display UTC time as-is from database
+    const date = new Date(dateString);
+    return date.toISOString().replace('T', ' ').replace('Z', '').slice(0, 19);
   };
 
   return (
