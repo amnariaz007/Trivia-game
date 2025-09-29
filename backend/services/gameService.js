@@ -240,6 +240,17 @@ class GameService {
         return;
       }
 
+      // Check if this question is already being processed to prevent duplication
+      const processingKey = `question_processing:${gameId}:${questionIndex}`;
+      const isProcessing = await queueService.redis?.get(processingKey);
+      if (isProcessing) {
+        console.log(`⚠️ Question ${questionIndex + 1} already being processed, skipping duplicate`);
+        return;
+      }
+      
+      // Mark as processing to prevent duplicates
+      await queueService.redis?.setex(processingKey, 30, 'processing');
+
       // Get current game state
       const gameState = await this.getGameState(gameId);
       if (!gameState) {
@@ -397,8 +408,12 @@ class GameService {
       if (timeLeft <= 0) {
         clearInterval(timer);
         gameState.questionTimer = null;
-        console.log(`⏰ Question ${questionIndex + 1} time expired`);
-        await this.handleQuestionTimeout(gameId, questionIndex);
+        console.log(`⏰ Question ${questionIndex + 1} time expired - giving 2 second grace period for answers`);
+        
+        // Give a 2-second grace period for answers that are still being processed
+        setTimeout(async () => {
+          await this.handleQuestionTimeout(gameId, questionIndex);
+        }, 2000);
         return;
       }
 
@@ -434,6 +449,17 @@ class GameService {
         await this.releaseLock(lockKey);
         console.log(`❌ Game not found: ${gameId}`);
         throw new Error('Game not found or not active');
+      }
+
+      // Check if the question is still active (within 10 seconds + 2 second grace period)
+      const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
+      const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
+      const maxAnswerTime = 12000; // 10 seconds + 2 second grace period
+      
+      if (timeSinceQuestionStart > maxAnswerTime) {
+        console.log(`⏰ Answer too late for ${phoneNumber} - ${timeSinceQuestionStart}ms since question start`);
+        await this.releaseLock(lockKey);
+        return { message: 'answer_too_late' };
       }
 
       const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
@@ -570,11 +596,21 @@ class GameService {
 
         console.log(`📝 Player ${player.user.nickname} answered: ${answer} (${isCorrect ? 'CORRECT' : 'WRONG'})`);
 
-        // Send single confirmation message
-        await queueService.addMessage('send_message', {
-          to: phoneNumber,
-          message: `✅ Answer locked in! Please wait until the next round.`
-        });
+        // Send single confirmation message with deduplication
+        const confirmDedupeKey = `confirm_sent:${gameId}:${gameState.currentQuestion}:${phoneNumber}`;
+        const confirmAlreadySent = await queueService.redis?.get(confirmDedupeKey);
+        
+        if (!confirmAlreadySent) {
+          await queueService.addMessage('send_message', {
+            to: phoneNumber,
+            message: `✅ Answer locked in! Please wait until the next round.`
+          });
+          
+          // Mark as sent to prevent duplicates
+          await queueService.redis?.setex(confirmDedupeKey, 60, 'sent');
+        } else {
+          console.log(`🔄 Skipping duplicate confirmation message for ${player.user.nickname}`);
+        }
         
         console.log(`⏰ Player ${player.user.nickname} answered, timer will continue for other players only`);
 
@@ -704,8 +740,8 @@ class GameService {
   // Handle question timeout - eliminate players who didn't answer
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
-      // Add longer delay to prevent race condition with answer processing
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds for safety
+      // Add short delay to prevent race condition with answer processing
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced to 1 second for better responsiveness
       
       const gameState = await this.getGameState(gameId);
       if (!gameState) return;
@@ -910,15 +946,25 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
           console.log(`❌ Player ${player.user.nickname} eliminated on Q${questionIndex + 1} (wrong answer)`);
         }
 
-        // Send result message
-        await queueService.addMessage('send_message', {
-          to: player.user.whatsapp_number,
-          message: isCorrect ? 
-            `✅ Correct Answer: ${correctAnswer}\n\n🎉 You're still in!` :
-            `❌ Correct Answer: ${correctAnswer}\n\n💀 You're out this game. Stick around to watch the finish!`,
-          gameId: gameId,
-          messageType: 'elimination'
-        });
+        // Send result message with deduplication
+        const resultDedupeKey = `result_sent:${gameId}:${questionIndex}:${player.user.whatsapp_number}`;
+        const resultAlreadySent = await queueService.redis?.get(resultDedupeKey);
+        
+        if (!resultAlreadySent) {
+          await queueService.addMessage('send_message', {
+            to: player.user.whatsapp_number,
+            message: isCorrect ? 
+              `✅ Correct Answer: ${correctAnswer}\n\n🎉 You're still in!` :
+              `❌ Correct Answer: ${correctAnswer}\n\n💀 You're out this game. Stick around to watch the finish!`,
+            gameId: gameId,
+            messageType: 'elimination'
+          });
+          
+          // Mark as sent to prevent duplicates
+          await queueService.redis?.setex(resultDedupeKey, 60, 'sent');
+        } else {
+          console.log(`🔄 Skipping duplicate result message for ${player.user.nickname}`);
+        }
       }
 
       // Save updated game state after processing all players
