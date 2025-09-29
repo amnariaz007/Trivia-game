@@ -548,14 +548,14 @@ class GameService {
           }
         }
         
-        const startTime = gameState.startTime instanceof Date ? gameState.startTime : new Date(gameState.startTime);
+        const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
         await PlayerAnswer.create({
           game_id: gameId,
           user_id: player.user.id,
           question_id: currentQuestion.id,
           selected_answer: answer,
           is_correct: isCorrect,
-          response_time_ms: Date.now() - startTime.getTime(),
+          response_time_ms: Date.now() - questionStartTime.getTime(),
           question_number: gameState.currentQuestion + 1
         });
 

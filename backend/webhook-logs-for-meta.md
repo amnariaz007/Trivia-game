@@ -110,3 +110,4 @@ The WhatsApp Business API integration is fully functional with:
 
 All technical requirements for Meta app review are met.
 
+
