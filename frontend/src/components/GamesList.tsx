@@ -23,22 +23,24 @@ interface GamesListProps {
 export default function GamesList({ games, onGameUpdated }: GamesListProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
-  // Helper function to check if game is expired
+  // Helper function to check if game is expired (1 minute grace period)
   const isGameExpired = (game: Game) => {
     const gameStartTime = new Date(game.start_time);
     const now = new Date();
-    return now > gameStartTime;
+    const gracePeriod = 60 * 1000; // 1 minute in milliseconds
+    return now > (gameStartTime.getTime() + gracePeriod);
   };
 
   const handleStartRegistration = async (gameId: string) => {
-    // Check if game has expired
+    // Check if game has expired (1 minute grace period)
     const game = games.find(g => g.id === gameId);
     if (game) {
       const gameStartTime = new Date(game.start_time);
       const now = new Date();
+      const gracePeriod = 60 * 1000; // 1 minute in milliseconds
       
-      if (now > gameStartTime) {
-        alert('❌ Cannot start registration!\n\n⏰ Game start time has passed.\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
+      if (now > (gameStartTime.getTime() + gracePeriod)) {
+        alert('❌ Cannot start registration!\n\n⏰ Game start time has passed (1 minute grace period expired).\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
         return;
       }
     }
@@ -57,14 +59,15 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
   };
 
   const handleStartGame = async (gameId: string) => {
-    // Check if game has expired
+    // Check if game has expired (1 minute grace period)
     const game = games.find(g => g.id === gameId);
     if (game) {
       const gameStartTime = new Date(game.start_time);
       const now = new Date();
+      const gracePeriod = 60 * 1000; // 1 minute in milliseconds
       
-      if (now > gameStartTime) {
-        alert('❌ Cannot start game!\n\n⏰ Game start time has passed.\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
+      if (now > (gameStartTime.getTime() + gracePeriod)) {
+        alert('❌ Cannot start game!\n\n⏰ Game start time has passed (1 minute grace period expired).\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
         return;
       }
     }
