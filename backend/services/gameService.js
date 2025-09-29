@@ -1015,20 +1015,42 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       const game = await Game.findByPk(gameId);
       if (game) {
         await game.update({ status: 'finished' });
-        console.log(`✅ Database updated: Game ${gameId} marked as finished`);
-      }
+            console.log(`✅ Database updated: Game ${gameId} marked as finished`);
+          }
 
-      console.log(`🚨 FORCE END COMPLETE: Game ${gameId} terminated by admin`);
-      
-      return { 
-        message: 'Game force ended by admin', 
-        winners: alivePlayers.map(p => p.user.nickname), 
-        winnerCount: alivePlayers.length 
-      };
+          // Delete questions after force ending game
+          await this.deleteGameQuestions(gameId);
+
+          console.log(`🚨 FORCE END COMPLETE: Game ${gameId} terminated by admin`);
+          
+          return { 
+            message: 'Game force ended by admin', 
+            winners: alivePlayers.map(p => p.user.nickname), 
+            winnerCount: alivePlayers.length 
+          };
 
     } catch (error) {
       console.error('❌ Error force ending game:', error);
       throw error;
+    }
+  }
+
+  // Delete questions for a game
+  async deleteGameQuestions(gameId) {
+    try {
+      const { Question } = require('../models');
+      
+      console.log(`🗑️ Deleting questions for game: ${gameId}`);
+      
+      const deletedCount = await Question.destroy({
+        where: { game_id: gameId }
+      });
+      
+      console.log(`✅ Deleted ${deletedCount} questions for game ${gameId}`);
+      
+    } catch (error) {
+      console.error('❌ Error deleting questions:', error);
+      // Don't throw error - question deletion failure shouldn't break game end
     }
   }
 
@@ -1085,6 +1107,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         status: gameResults.gameStatus,
         prizeDistribution: gameResults.prizeDistribution
       });
+
+      // Delete questions after game ends
+      await this.deleteGameQuestions(gameId);
 
       return gameResults;
 

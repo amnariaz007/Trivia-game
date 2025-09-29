@@ -28,7 +28,7 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
     const gameStartTime = new Date(game.start_time);
     const now = new Date();
     const gracePeriod = 60 * 1000; // 1 minute in milliseconds
-    return now > (gameStartTime.getTime() + gracePeriod);
+    return now.getTime() > (gameStartTime.getTime() + gracePeriod);
   };
 
   const handleStartRegistration = async (gameId: string) => {
@@ -39,7 +39,7 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
       const now = new Date();
       const gracePeriod = 60 * 1000; // 1 minute in milliseconds
       
-      if (now > (gameStartTime.getTime() + gracePeriod)) {
+      if (now.getTime() > (gameStartTime.getTime() + gracePeriod)) {
         alert('❌ Cannot start registration!\n\n⏰ Game start time has passed (1 minute grace period expired).\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
         return;
       }
@@ -66,7 +66,7 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
       const now = new Date();
       const gracePeriod = 60 * 1000; // 1 minute in milliseconds
       
-      if (now > (gameStartTime.getTime() + gracePeriod)) {
+      if (now.getTime() > (gameStartTime.getTime() + gracePeriod)) {
         alert('❌ Cannot start game!\n\n⏰ Game start time has passed (1 minute grace period expired).\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
         return;
       }
