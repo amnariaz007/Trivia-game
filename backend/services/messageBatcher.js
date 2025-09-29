@@ -6,8 +6,8 @@
 class MessageBatcher {
   constructor() {
     this.batches = new Map(); // batchId -> { messages: [], timer: null }
-    this.batchSize = 50; // Maximum messages per batch
-    this.batchTimeout = 2000; // 2 seconds timeout
+    this.batchSize = 100; // Maximum messages per batch
+    this.batchTimeout = 1000; // 1 second timeout for faster processing
     this.pendingMessages = [];
     
     console.log('✅ Message Batcher initialized');
