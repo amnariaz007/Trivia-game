@@ -182,10 +182,9 @@ Tap "JOIN" to get the start ping!`;
     return await this.sendInteractiveMessage(to, message, ['JOIN']);
   }
 
-  // Send question with timer
+  // Send question with timer - simplified to just show question
   async sendQuestionWithTimer(to, questionText, options, questionNumber, timeLeft) {
-    const timerBar = this.generateTimerBar(timeLeft);
-    const body = `Q${questionNumber}: ${questionText}\n\n⏱️ Time left: ${timerBar} ${timeLeft}s`;
+    const body = `Q${questionNumber}: ${questionText}`;
     
     return await this.sendInteractiveMessage(to, body, options);
   }
@@ -270,11 +269,7 @@ Reply "PLAY" for a reminder.`;
   }
 
   // Generate timer bar visualization
-  generateTimerBar(seconds) {
-    const totalBlocks = 10;
-    const filledBlocks = Math.ceil((seconds / 10) * totalBlocks);
-    return '■'.repeat(filledBlocks) + '□'.repeat(totalBlocks - filledBlocks);
-  }
+  // Timer bar function removed - no more timer notifications
 
   // Extract phone number from WhatsApp message
   extractPhoneNumber(message) {
@@ -294,31 +289,7 @@ Reply "PLAY" for a reminder.`;
     return message?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.title;
   }
 
-  // Send timer update message
-  async sendTimerUpdate(to, questionNumber, timeLeft, questionText, options, correctAnswer) {
-    const timerBar = this.generateTimerBar(timeLeft);
-    
-    if (timeLeft <= 0) {
-      return await this.sendTextMessage(to, '⏰ Time\'s up! Submissions closed.');
-    }
-    
-    // Ensure correct answer is always included in the 3 buttons
-    const threeOptions = [correctAnswer];
-    const otherOptions = options.filter(opt => opt !== correctAnswer);
-    
-    // Add 2 more random options from the remaining options
-    for (let i = 0; i < 2 && otherOptions.length > 0; i++) {
-      const randomIndex = Math.floor(Math.random() * otherOptions.length);
-      threeOptions.push(otherOptions.splice(randomIndex, 1)[0]);
-    }
-    
-    // Randomize the order of the 3 options
-    const randomizedOptions = threeOptions.sort(() => Math.random() - 0.5);
-    
-    // Send timer update with interactive buttons
-    const body = `⏰ Time left: ${timerBar} ${timeLeft}s\n\nQ${questionNumber}: ${questionText}`;
-    return await this.sendInteractiveMessage(to, body, randomizedOptions);
-  }
+  // Timer update function removed - no more timer notifications in chat
 
   // Send game start message
   async sendGameStartMessage(to, gameInfo) {

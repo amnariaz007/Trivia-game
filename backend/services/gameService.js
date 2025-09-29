@@ -127,11 +127,7 @@ class GameService {
   }
 
   // Generate timer bar visualization
-  generateTimerBar(seconds) {
-    const totalBlocks = 10;
-    const filledBlocks = Math.ceil((seconds / 10) * totalBlocks);
-    return '■'.repeat(filledBlocks) + '□'.repeat(totalBlocks - filledBlocks);
-  }
+  // Timer bar function removed - no more timer notifications
 
   // Start a new game
   async startGame(gameId) {
@@ -384,45 +380,11 @@ class GameService {
 
     let timeLeft = totalSeconds;
     
-    // Send initial timer
-    await this.sendTimerUpdate(gameId, questionIndex, timeLeft);
-
-    // Simple timer countdown
-    const timer = setInterval(async () => {
-      // Check if all players have answered before continuing timer
-      const currentGameState = await this.getGameState(gameId);
-      if (currentGameState) {
-        const alivePlayers = currentGameState.players.filter(p => p.status === 'alive');
-        const answeredPlayers = alivePlayers.filter(p => p.answer);
-        
-        if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
-          console.log(`⏰ All players answered, stopping timer early`);
-          clearInterval(timer);
-          gameState.questionTimer = null;
-          return;
-        }
-      }
-      
-      timeLeft--;
-      
-      if (timeLeft <= 0) {
-        clearInterval(timer);
-        gameState.questionTimer = null;
-        console.log(`⏰ Question ${questionIndex + 1} time expired - giving 2 second grace period for answers`);
-        
-        // Give a 2-second grace period for answers that are still being processed
-        setTimeout(async () => {
-          await this.handleQuestionTimeout(gameId, questionIndex);
-        }, 2000);
-        return;
-      }
-
-      // Send timer updates at key moments
-      if (timeLeft === 5 || timeLeft === 2) {
-        await this.sendTimerUpdate(gameId, questionIndex, timeLeft);
-      }
-
-    }, 1000);
+    // Simple timer - no notifications, just wait 10 seconds
+    const timer = setTimeout(async () => {
+      console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout`);
+      await this.handleQuestionTimeout(gameId, questionIndex);
+    }, 10000); // 10 seconds
 
     // Store timer reference
     gameState.questionTimer = timer;
@@ -705,40 +667,7 @@ class GameService {
     }
   }
 
-  // Send timer update
-  async sendTimerUpdate(gameId, questionIndex, timeLeft) {
-    try {
-      const gameState = await this.getGameState(gameId);
-      if (!gameState) return;
-
-      const { questions, players } = gameState;
-      const question = questions[questionIndex];
-      const questionNumber = questionIndex + 1;
-
-      // Send timer update to all alive players who haven't answered
-      for (const player of players) {
-        if (player.status === 'alive' && !player.answer) {
-          // Only send timer update as text message, not interactive
-          const timerBar = this.generateTimerBar(timeLeft);
-          const message = `⏰ Time left: ${timerBar} ${timeLeft}s`;
-          
-          console.log(`⏰ Sending timer update to ${player.user.nickname} (${player.user.whatsapp_number}): ${timeLeft}s - hasAnswer: ${!!player.answer}`);
-          
-          await queueService.addMessage('send_message', {
-            to: player.user.whatsapp_number,
-            message: message,
-            gameId: gameId,
-            messageType: 'timer_update'
-          });
-        } else {
-          console.log(`⏰ Skipping timer update for ${player.user.nickname} - status: ${player.status}, hasAnswer: ${!!player.answer}`);
-        }
-      }
-
-    } catch (error) {
-      console.error('❌ Error sending timer update:', error);
-    }
-  }
+  // Timer update function removed - no more timer notifications in chat
 
   // Handle question timeout - eliminate players who didn't answer
   async handleQuestionTimeout(gameId, questionIndex) {
