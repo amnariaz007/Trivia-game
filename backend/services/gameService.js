@@ -984,7 +984,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       for (const player of alivePlayers) {
         await queueService.addMessage('send_message', {
           to: player.user.whatsapp_number,
-          message: `🚨 GAME ENDED BY ADMIN\n\n❌ This game has been terminated by the administrator.\n\n💰 Prize pool: $${gameState.game.prize_pool}\n🎮 Game: ${gameId.slice(0, 8)}...\n\nReply "PLAY" for the next game.`,
+          message: `🚨 GAME ENDED BY ADMIN\n\n❌ This game has been terminated by the administrator.\n\n💰 Prize pool: $${gameState.prizePool || 100}\n🎮 Game: ${gameId.slice(0, 8)}...\n\nReply "PLAY" for the next game.`,
           gameId: gameId,
           messageType: 'emergency_end'
         });
