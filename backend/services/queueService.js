@@ -149,10 +149,10 @@ class QueueService {
     }
 
     console.log('🔧 Setting up queue handlers...');
-    console.log('⚡ Message queue concurrency: 15 workers (normal)');
-    console.log('⚡ Game queue concurrency: 8 workers (normal)');
+    console.log('⚡ Message queue concurrency: 5 workers (simple for small groups)');
+    console.log('⚡ Game queue concurrency: 3 workers (simple for small groups)');
 
-    this.messageQueue.process('send_message', 15, async (job) => {
+    this.messageQueue.process('send_message', 5, async (job) => {
       try {
         console.log('📤 Processing send_message job:', job.id);
         return await this.processMessage(job.data);
@@ -162,7 +162,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_template', 15, async (job) => {
+    this.messageQueue.process('send_template', 5, async (job) => {
       try {
         console.log('📤 Processing send_template job:', job.id);
         return await this.processTemplate(job.data);
@@ -172,7 +172,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_question', 15, async (job) => {
+    this.messageQueue.process('send_question', 5, async (job) => {
       try {
         console.log('📤 Processing send_question job:', job.id);
         return await this.processQuestion(job.data);
@@ -182,7 +182,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_elimination', 15, async (job) => {
+    this.messageQueue.process('send_elimination', 5, async (job) => {
       try {
         console.log('📤 Processing send_elimination job:', job.id);
         return await this.processElimination(job.data);
@@ -192,7 +192,7 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('game_timer', 8, async (job) => {
+    this.gameQueue.process('game_timer', 3, async (job) => {
       try {
         console.log('⏰ Processing game_timer job:', job.id);
         return await this.processGameTimer(job.data);
@@ -202,7 +202,7 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('question_timer', 8, async (job) => {
+    this.gameQueue.process('question_timer', 3, async (job) => {
       try {
         console.log('❓ Processing question_timer job:', job.id);
         return await this.processQuestionTimer(job.data);
