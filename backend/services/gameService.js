@@ -449,6 +449,10 @@ class GameService {
         throw new Error('Player not active in game');
       }
 
+      // Mark player as processing answer to prevent race condition with timeout
+      player.processingAnswer = true;
+      await this.setGameState(gameId, gameState);
+
       // Create answer lock key to prevent race conditions
       const answerLockKey = `player_answer:${gameId}:${phoneNumber}:${gameState.currentQuestion}`;
       
@@ -456,6 +460,9 @@ class GameService {
       const answerLockAcquired = await queueService.acquireLock(answerLockKey, 5);
       if (!answerLockAcquired) {
         console.log(`🔒 Answer lock not acquired for ${phoneNumber}, skipping duplicate answer`);
+        // Clear processing flag if lock not acquired
+        player.processingAnswer = false;
+        await this.setGameState(gameId, gameState);
         return { message: 'duplicate_answer_skipped' };
       }
 
@@ -569,7 +576,8 @@ class GameService {
         
         console.log(`⏰ Player ${player.user.nickname} answered, timer will continue for other players only`);
 
-        // Save updated game state to Redis after processing
+        // Clear processing flag and save updated game state to Redis after processing
+        player.processingAnswer = false;
         await this.setGameState(gameId, gameState);
 
         // Check if all alive players have answered
@@ -613,6 +621,19 @@ class GameService {
 
     } catch (error) {
       console.error('❌ Error handling player answer:', error);
+      // Clear processing flag on error
+      try {
+        const gameState = await this.getGameState(gameId);
+        if (gameState) {
+          const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
+          if (player) {
+            player.processingAnswer = false;
+            await this.setGameState(gameId, gameState);
+          }
+        }
+      } catch (clearError) {
+        console.error('❌ Error clearing processing flag:', clearError);
+      }
       // Release the main game lock on error
       if (lockKey) {
         await this.releaseLock(lockKey);
@@ -694,8 +715,8 @@ class GameService {
   // Handle question timeout - eliminate players who didn't answer
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
-      // Add delay to prevent race condition with answer processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Add longer delay to prevent race condition with answer processing
+      await new Promise(resolve => setTimeout(resolve, 3000));
       
       const gameState = await this.getGameState(gameId);
       if (!gameState) return;
@@ -714,7 +735,8 @@ class GameService {
       // Eliminate players who didn't answer
       for (const player of players) {
         console.log(`🔍 Checking player ${player.user.nickname}: status=${player.status}, answer="${player.answer}"`);
-        if (player.status === 'alive' && !player.answer) {
+        // More strict check: player must be alive AND have no answer AND not be in the middle of processing
+        if (player.status === 'alive' && !player.answer && !player.processingAnswer) {
           // Eliminate player for not answering
           player.status = 'eliminated';
           player.eliminatedAt = new Date();
