@@ -479,16 +479,7 @@ async function handleJoinCommand(user) {
       return;
     }
     
-    // Check if game has expired
-    if (activeGame.status === 'expired') {
-      await queueService.addMessage('send_message', {
-        to: user.whatsapp_number,
-        message: '⏰ Game has expired! The start time has passed and the game is no longer available.\n\nReply "PLAY" to get notified about the next game!',
-        priority: 'high',
-        messageType: 'join_response'
-      });
-      return;
-    }
+    // Note: Expiration validation moved to frontend
     
     if (activeGame.status !== 'pre_game') {
       await queueService.addMessage('send_message', {

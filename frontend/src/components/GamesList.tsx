@@ -24,6 +24,18 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
   const handleStartRegistration = async (gameId: string) => {
+    // Check if game has expired
+    const game = games.find(g => g.id === gameId);
+    if (game) {
+      const gameStartTime = new Date(game.start_time);
+      const now = new Date();
+      
+      if (now > gameStartTime) {
+        alert('❌ Cannot start registration!\n\n⏰ Game start time has passed.\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
+        return;
+      }
+    }
+    
     setLoading(gameId);
     try {
       await apiService.startGameRegistration(gameId);
@@ -38,6 +50,18 @@ export default function GamesList({ games, onGameUpdated }: GamesListProps) {
   };
 
   const handleStartGame = async (gameId: string) => {
+    // Check if game has expired
+    const game = games.find(g => g.id === gameId);
+    if (game) {
+      const gameStartTime = new Date(game.start_time);
+      const now = new Date();
+      
+      if (now > gameStartTime) {
+        alert('❌ Cannot start game!\n\n⏰ Game start time has passed.\n📅 Start Time: ' + gameStartTime.toLocaleString() + '\n🕐 Current Time: ' + now.toLocaleString() + '\n\nGame should be marked as expired.');
+        return;
+      }
+    }
+    
     setLoading(gameId);
     try {
       await apiService.startGame(gameId);
