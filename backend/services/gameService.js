@@ -449,13 +449,13 @@ class GameService {
         throw new Error('Player not active in game');
       }
 
-      // Mark player as processing answer to prevent race condition with timeout
-      player.processingAnswer = true;
-      await this.setGameState(gameId, gameState);
+      // Record the answer normally
+      player.answer = answer;
+      player.answerTime = Date.now();
+      console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
       
-      // Also set a Redis lock to prevent timeout elimination
-      const processingLockKey = `processing_answer:${gameId}:${phoneNumber}:${gameState.currentQuestion}`;
-      await queueService.redis?.setex(processingLockKey, 15, 'processing'); // 15 second lock
+      // Save immediately to prevent race conditions
+      await this.setGameState(gameId, gameState);
 
       // Create answer lock key to prevent race conditions
       const answerLockKey = `player_answer:${gameId}:${phoneNumber}:${gameState.currentQuestion}`;
@@ -509,10 +509,8 @@ class GameService {
           };
         }
 
-        // Record the answer
-        player.answer = answer;
-        player.answerTime = Date.now();
-        console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
+        // Answer already set above, just verify
+        console.log(`✅ Player ${player.user.nickname} answer confirmed: "${player.answer}"`);
         
         const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
       
@@ -580,12 +578,8 @@ class GameService {
         
         console.log(`⏰ Player ${player.user.nickname} answered, timer will continue for other players only`);
 
-        // Clear processing flag and save updated game state to Redis after processing
-        player.processingAnswer = false;
+        // Save updated game state to Redis after processing
         await this.setGameState(gameId, gameState);
-        
-        // Clear the Redis processing lock
-        await queueService.redis?.del(processingLockKey);
 
         // Check if all alive players have answered
         const alivePlayers = gameState.players.filter(p => p.status === 'alive');
@@ -628,22 +622,7 @@ class GameService {
 
     } catch (error) {
       console.error('❌ Error handling player answer:', error);
-      // Clear processing flag on error
-      try {
-        const gameState = await this.getGameState(gameId);
-        if (gameState) {
-          const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
-          if (player) {
-            player.processingAnswer = false;
-            await this.setGameState(gameId, gameState);
-          }
-        }
-        // Clear Redis processing lock on error
-        const processingLockKey = `processing_answer:${gameId}:${phoneNumber}:${gameState?.currentQuestion || 0}`;
-        await queueService.redis?.del(processingLockKey);
-      } catch (clearError) {
-        console.error('❌ Error clearing processing flag:', clearError);
-      }
+      // Simple error handling - no complex cleanup needed
       // Release the main game lock on error
       if (lockKey) {
         await this.releaseLock(lockKey);
@@ -726,7 +705,7 @@ class GameService {
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
       // Add longer delay to prevent race condition with answer processing
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds for safety
       
       const gameState = await this.getGameState(gameId);
       if (!gameState) return;
@@ -742,18 +721,12 @@ class GameService {
       
       console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations`);
 
-      // Eliminate players who didn't answer
+      // Eliminate players who didn't answer - SIMPLIFIED LOGIC
       for (const player of players) {
-        console.log(`🔍 Checking player ${player.user.nickname}: status=${player.status}, answer="${player.answer}", processing=${player.processingAnswer}`);
+        console.log(`🔍 Checking player ${player.user.nickname}: status=${player.status}, answer="${player.answer}"`);
         
-        // Check Redis lock to see if player is processing an answer
-        const processingLockKey = `processing_answer:${gameId}:${player.user.whatsapp_number}:${questionIndex}`;
-        const isProcessingInRedis = await queueService.redis?.get(processingLockKey);
-        
-        console.log(`🔒 Redis processing lock for ${player.user.nickname}: ${isProcessingInRedis}`);
-        
-        // More strict check: player must be alive AND have no answer AND not be in the middle of processing
-        if (player.status === 'alive' && !player.answer && !player.processingAnswer && !isProcessingInRedis) {
+        // NORMAL GAME LOGIC: Eliminate if player is alive AND has NO answer (timeout)
+        if (player.status === 'alive' && (!player.answer || player.answer.trim() === '')) {
           // Eliminate player for not answering
           player.status = 'eliminated';
           player.eliminatedAt = new Date();
@@ -908,7 +881,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       for (const player of players) {
         if (player.status !== 'alive') continue;
 
+        console.log(`🔍 Processing player ${player.user.nickname}: answer="${player.answer}", correctAnswer="${correctAnswer}"`);
         const isCorrect = player.answer && player.answer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
+        console.log(`🔍 Player ${player.user.nickname} isCorrect: ${isCorrect}`);
         
         if (!isCorrect) {
           // Eliminate player
