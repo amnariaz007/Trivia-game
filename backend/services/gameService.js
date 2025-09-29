@@ -1018,9 +1018,6 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
             console.log(`✅ Database updated: Game ${gameId} marked as finished`);
           }
 
-          // Delete questions after force ending game
-          await this.deleteGameQuestions(gameId);
-
           console.log(`🚨 FORCE END COMPLETE: Game ${gameId} terminated by admin`);
           
           return { 
@@ -1035,24 +1032,6 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
     }
   }
 
-  // Delete questions for a game
-  async deleteGameQuestions(gameId) {
-    try {
-      const { Question } = require('../models');
-      
-      console.log(`🗑️ Deleting questions for game: ${gameId}`);
-      
-      const deletedCount = await Question.destroy({
-        where: { game_id: gameId }
-      });
-      
-      console.log(`✅ Deleted ${deletedCount} questions for game ${gameId}`);
-      
-    } catch (error) {
-      console.error('❌ Error deleting questions:', error);
-      // Don't throw error - question deletion failure shouldn't break game end
-    }
-  }
 
   // End game
   async endGame(gameId) {
@@ -1107,9 +1086,6 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         status: gameResults.gameStatus,
         prizeDistribution: gameResults.prizeDistribution
       });
-
-      // Delete questions after game ends
-      await this.deleteGameQuestions(gameId);
 
       return gameResults;
 
