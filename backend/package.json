@@ -4,8 +4,8 @@
   "description": "QRush Trivia - Sudden-Death WhatsApp Trivia Game",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js",
+    "start": "node cluster.js",
+    "dev": "nodemon cluster.js",
     "test": "jest",
     "lint": "eslint .",
     "format": "prettier --write .",
