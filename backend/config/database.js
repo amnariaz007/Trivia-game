@@ -2,7 +2,8 @@ const { Sequelize } = require('sequelize');
 
 // Smart database configuration that works for both local and production
 const isLocalDatabase = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost');
-
+console.log('isLocalDatabase', isLocalDatabase);
+console.log('process.env.DATABASE_URL', process.env.DATABASE_URL);
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   protocol: 'postgres',

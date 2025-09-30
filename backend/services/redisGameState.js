@@ -193,10 +193,21 @@ class RedisGameState {
     }
 
     try {
-      const pattern = `${this.keyPrefix}*`;
-      const keys = await this.redis.keys(pattern);
-      
-      return keys.map(key => key.replace(this.keyPrefix, ''));
+      // Use SCAN to avoid blocking Redis with KEYS
+      const matchPattern = `${this.keyPrefix}*`;
+      const ids = [];
+      let cursor = '0';
+      do {
+        const [nextCursor, batch] = await this.redis.scan(cursor, 'MATCH', matchPattern, 'COUNT', 200);
+        cursor = nextCursor;
+        if (Array.isArray(batch) && batch.length > 0) {
+          for (const key of batch) {
+            ids.push(key.replace(this.keyPrefix, ''));
+          }
+        }
+      } while (cursor !== '0');
+
+      return ids;
     } catch (error) {
       console.error('❌ Error getting active game IDs:', error);
       return [];

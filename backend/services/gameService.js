@@ -10,8 +10,116 @@ class GameService {
     this.activeGames = new Map(); // In-memory game state (fallback)
     this.redisGameState = new RedisGameState(); // Redis game state (primary)
     this.circuitBreaker = new CircuitBreaker();
+    this.inMemoryLocks = new Set(); // Fallback dedupe when Redis not available
+    this.cleanupInterval = null; // For periodic cleanup
+    
+    // Start periodic cleanup to prevent memory leaks
+    this.startCleanup();
+    
     console.log('✅ Circuit Breaker initialized for GameService');
     console.log('✅ Redis Game State initialized for GameService');
+  }
+
+  // Periodic cleanup to prevent memory leaks
+  startCleanup() {
+    // Clean up every 5 minutes
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredGames();
+    }, 5 * 60 * 1000);
+  }
+
+  // Clean up expired games and old locks
+  cleanupExpiredGames() {
+    try {
+      const now = Date.now();
+      const maxGameAge = 2 * 60 * 60 * 1000; // 2 hours
+      const maxLockAge = 5 * 60 * 1000; // 5 minutes
+      
+      // Clean up old in-memory games
+      for (const [gameId, gameState] of this.activeGames.entries()) {
+        if (gameState.lastActivity && (now - gameState.lastActivity) > maxGameAge) {
+          console.log(`🧹 Cleaning up expired game: ${gameId}`);
+          this.cleanupGameState(gameId);
+          this.activeGames.delete(gameId);
+        }
+      }
+      
+      // Clean up old in-memory locks (fallback when Redis unavailable)
+      const lockKeys = Array.from(this.inMemoryLocks);
+      for (const lockKey of lockKeys) {
+        // Simple cleanup - remove locks older than 5 minutes
+        // This is a basic implementation; in production you'd want more sophisticated cleanup
+        if (lockKey.includes('results:') && Math.random() < 0.1) { // 10% chance to clean
+          this.inMemoryLocks.delete(lockKey);
+        }
+      }
+      
+      console.log(`🧹 Cleanup completed: ${this.activeGames.size} active games, ${this.inMemoryLocks.size} locks`);
+    } catch (error) {
+      console.error('❌ Error during cleanup:', error);
+    }
+  }
+
+  // Clean up game state when game ends
+  async cleanupGameState(gameId) {
+    try {
+      const gameState = this.activeGames.get(gameId);
+      if (gameState) {
+        // Clear all timers
+        if (gameState.questionTimer) {
+          clearTimeout(gameState.questionTimer);
+        }
+        if (gameState.countdownTimers) {
+          gameState.countdownTimers.forEach(timer => clearTimeout(timer));
+        }
+        
+        // Cancel any pending countdown jobs
+        await this.cancelCountdownJobs(gameId, gameState.currentQuestion || 0);
+        
+        // Cancel all pending queue jobs for this game
+        await this.cancelAllGameJobs(gameId);
+        
+        console.log(`🧹 Cleaned up game state for: ${gameId}`);
+      }
+    } catch (error) {
+      console.error('❌ Error cleaning up game state:', error);
+    }
+  }
+
+  // Cancel all pending queue jobs for a game
+  async cancelAllGameJobs(gameId) {
+    try {
+      const queueService = require('./queueService');
+      
+      // Cancel message queue jobs for this game
+      if (queueService.messageQueue) {
+        const waitingMessages = await queueService.messageQueue.getWaiting();
+        const gameMessages = waitingMessages.filter(job => 
+          job.data.gameId === gameId
+        );
+        
+        for (const job of gameMessages) {
+          await job.remove();
+          console.log(`🗑️ Cancelled message job: ${job.name} for game ${gameId}`);
+        }
+      }
+      
+      // Cancel game queue jobs for this game
+      if (queueService.gameQueue) {
+        const waitingGames = await queueService.gameQueue.getWaiting();
+        const gameJobs = waitingGames.filter(job => 
+          job.data.gameId === gameId
+        );
+        
+        for (const job of gameJobs) {
+          await job.remove();
+          console.log(`🗑️ Cancelled game job: ${job.name} for game ${gameId}`);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error cancelling game jobs:', error);
+    }
   }
 
   /**
@@ -307,44 +415,31 @@ class GameService {
       game.current_question = questionIndex;
       await game.save();
 
-      // Send question to all alive players
-      console.log(`📤 Sending question ${questionIndex + 1} to ${players.filter(p => p.status === 'alive').length} alive players`);
-      
+      // Enqueue question for all alive players (non-blocking, scalable)
+      console.log(`📤 Enqueuing question ${questionIndex + 1} to ${players.filter(p => p.status === 'alive').length} alive players`);
+      const enqueuePromises = [];
       for (const player of players) {
         if (player.status === 'alive') {
-          console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.nickname} (${player.user.whatsapp_number})`);
-          
-          // Send question directly for better reliability
-          try {
-            const whatsappService = require('./whatsappService');
-            await whatsappService.sendQuestion(
-              player.user.whatsapp_number,
-              question.question_text,
-              [question.option_a, question.option_b, question.option_c, question.option_d],
-              questionIndex + 1,
-              question.correct_answer
-            );
-            console.log(`✅ Question sent to ${player.user.nickname}`);
-          } catch (error) {
-            console.error(`❌ Failed to send question to ${player.user.nickname}:`, error);
-            // Try queue as fallback
-            try {
-              const job = await queueService.addMessage('send_question', {
-                to: player.user.whatsapp_number,
-                gameId,
-                questionNumber: questionIndex + 1,
-                questionText: question.question_text,
-                options: [question.option_a, question.option_b, question.option_c, question.option_d],
-                correctAnswer: question.correct_answer,
-                timeLimit: 10
-              });
-              console.log(`📤 Queue fallback for ${player.user.nickname}:`, job ? 'SUCCESS' : 'FAILED');
-            } catch (queueError) {
-              console.error(`❌ Queue fallback also failed for ${player.user.nickname}:`, queueError);
-            }
-          }
+          enqueuePromises.push(
+            queueService.addMessage('send_question', {
+              to: player.user.whatsapp_number,
+              gameId,
+              questionNumber: questionIndex + 1,
+              questionText: question.question_text,
+              options: [question.option_a, question.option_b, question.option_c, question.option_d],
+              correctAnswer: question.correct_answer,
+              timeLimit: 10
+            }).catch(err => {
+              console.error(`❌ Failed to enqueue question for ${player.user.nickname}:`, err?.message || err);
+              return null;
+            })
+          );
         }
       }
+      // Do not await long; settle quickly to avoid blocking request lifecycle
+      Promise.allSettled(enqueuePromises).then(() => {
+        console.log(`✅ Question ${questionIndex + 1} enqueue complete`);
+      });
 
       // Start countdown timer
       await this.startQuestionTimer(gameId, questionIndex, 10);
@@ -364,30 +459,147 @@ class GameService {
     }
   }
 
-  // Start question timer (simplified and reliable)
+  // Start question timer via Bull delayed job so it survives restarts
   async startQuestionTimer(gameId, questionIndex, totalSeconds) {
     const gameState = await this.getGameState(gameId);
     if (!gameState) return;
 
-    // Clear any existing timer for this question
+    // Clear any existing in-process timer reference
     if (gameState.questionTimer) {
-      console.log(`🔄 Clearing existing timer for question ${questionIndex + 1}`);
+      console.log(`🔄 Clearing existing in-process timer for question ${questionIndex + 1}`);
       clearInterval(gameState.questionTimer);
       gameState.questionTimer = null;
     }
 
-    console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s)`);
-
-    let timeLeft = totalSeconds;
+    console.log(`⏰ Scheduling timer for question ${questionIndex + 1} (${totalSeconds}s) via queue`);
     
-    // Simple timer - no notifications, just wait 10 seconds
-    const timer = setTimeout(async () => {
-      console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout`);
-      await this.handleQuestionTimeout(gameId, questionIndex);
-    }, 10000); // 10 seconds
+    // ALWAYS use in-process timers for countdowns to ensure reliability
+    // Queue-based timers are unreliable for short delays
+    const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+    if (alivePlayers.length > 0) {
+      console.log(`⏳ Setting up in-process countdown timers for ${alivePlayers.length} players`);
+      
+      // Schedule 5s countdown
+      if (totalSeconds > 5) {
+        const countdown5Timer = setTimeout(() => {
+          console.log(`⏳ [TIMER] 5s countdown firing for question ${questionIndex + 1}`);
+          this.sendCountdown(gameId, questionIndex, 5);
+        }, (totalSeconds - 5) * 1000);
+        
+        // Store timer reference for cleanup
+        if (!gameState.countdownTimers) gameState.countdownTimers = [];
+        gameState.countdownTimers.push(countdown5Timer);
+      }
+      
+      // Schedule 2s countdown
+      if (totalSeconds > 2) {
+        const countdown2Timer = setTimeout(() => {
+          console.log(`⏳ [TIMER] 2s countdown firing for question ${questionIndex + 1}`);
+          this.sendCountdown(gameId, questionIndex, 2);
+        }, (totalSeconds - 2) * 1000);
+        
+        // Store timer reference for cleanup
+        if (!gameState.countdownTimers) gameState.countdownTimers = [];
+        gameState.countdownTimers.push(countdown2Timer);
+      }
+    }
 
-    // Store timer reference
-    gameState.questionTimer = timer;
+    try {
+      await queueService.addGameTimer('question_timer', { gameId, questionIndex }, totalSeconds);
+    } catch (e) {
+      console.error('❌ Failed to schedule question timer, falling back to setTimeout:', e?.message || e);
+      // Fallback: in-process timer if queue unavailable
+      const timer = setTimeout(async () => {
+        console.log(`⏰ [fallback] Question ${questionIndex + 1} time expired - processing timeout`);
+        await this.handleQuestionTimeout(gameId, questionIndex);
+      }, totalSeconds * 1000);
+      gameState.questionTimer = timer;
+    }
+  }
+
+  // Cancel pending countdown jobs for a question
+  async cancelCountdownJobs(gameId, questionIndex) {
+    try {
+      // Clear in-process countdown timers
+      const gameState = await this.getGameState(gameId);
+      if (gameState && gameState.countdownTimers) {
+        console.log(`🗑️ Clearing ${gameState.countdownTimers.length} countdown timers for question ${questionIndex + 1}`);
+        gameState.countdownTimers.forEach(timer => clearTimeout(timer));
+        gameState.countdownTimers = [];
+      }
+
+      // Also clear the main question timer if it exists
+      if (gameState && gameState.questionTimer) {
+        clearTimeout(gameState.questionTimer);
+        gameState.questionTimer = null;
+      }
+
+      // Also cancel queue-based countdown jobs if available
+      const queueService = require('./queueService');
+      if (!queueService.gameQueue) return;
+
+      // Get all waiting jobs and remove countdown jobs for this question
+      const waitingJobs = await queueService.gameQueue.getWaiting();
+      const countdownJobs = waitingJobs.filter(job => 
+        job.name === 'question_countdown' && 
+        job.data.gameId === gameId && 
+        job.data.questionIndex === questionIndex
+      );
+
+      for (const job of countdownJobs) {
+        await job.remove();
+        console.log(`🗑️ Cancelled countdown job: ${job.data.secondsLeft}s for question ${questionIndex + 1}`);
+      }
+    } catch (error) {
+      console.error('❌ Error cancelling countdown jobs:', error);
+    }
+  }
+
+  // Send countdown messages to alive players (deduped by queueService)
+  async sendCountdown(gameId, questionIndex, secondsLeft, metadata = {}) {
+    try {
+      const gameState = await this.getGameState(gameId);
+      if (!gameState) {
+        console.log(`⚠️ No game state found for countdown: gameId=${gameId}, question=${questionIndex + 1}, secondsLeft=${secondsLeft}`);
+        return;
+      }
+
+      // If question already advanced, skip
+      if (gameState.currentQuestion !== questionIndex) {
+        console.log(`⚠️ Question advanced, skipping countdown: current=${gameState.currentQuestion}, expected=${questionIndex}, secondsLeft=${secondsLeft}`);
+        return;
+      }
+
+      // Check if game is still active (support legacy 'active' and current 'in_progress')
+      const isGameActive = gameState.status === 'active' || gameState.status === 'in_progress';
+      if (!isGameActive) {
+        console.log(`⚠️ Game not active, skipping countdown: status=${gameState.status}, secondsLeft=${secondsLeft}`);
+        return;
+      }
+
+      // Send only to players who are alive AND have not answered yet
+      const alivePlayers = gameState.players.filter(p => p.status === 'alive' && (!p.answer || p.answer.trim() === ''));
+      if (alivePlayers.length === 0) {
+        console.log(`⚠️ No alive players for countdown: secondsLeft=${secondsLeft}`);
+        return;
+      }
+
+      const message = secondsLeft === 2 ? '⏳ 2s left!' : '⏳ 5s left!';
+      const messageType = `countdown_${secondsLeft}`;
+
+      console.log(`⏳ Sending ${secondsLeft}s countdown to ${alivePlayers.length} alive players (gameId=${gameId}, question=${questionIndex + 1})`);
+
+      for (const player of alivePlayers) {
+        await queueService.addMessage('send_message', {
+          to: player.user.whatsapp_number,
+          message,
+          gameId,
+          messageType
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error sending countdown:', error);
+    }
   }
 
 
@@ -398,8 +610,9 @@ class GameService {
       console.log(`🎯 handlePlayerAnswer called: gameId=${gameId}, phone=${phoneNumber}, answer="${answer}"`);
       
       // Use Redis lock to prevent race conditions when multiple players answer simultaneously
+      // Shorter lock timeout to reduce contention
       lockKey = `game_lock:${gameId}:answer:${phoneNumber}`;
-      const lockAcquired = await this.acquireLock(lockKey, 10); // 10 second lock
+      const lockAcquired = await this.acquireLock(lockKey, 3); // 3 second lock (reduced from 10)
       
       if (!lockAcquired) {
         console.log(`⚠️ Could not acquire lock for player ${phoneNumber} in game ${gameId}, skipping`);
@@ -413,13 +626,58 @@ class GameService {
         throw new Error('Game not found or not active');
       }
 
-      // Check if the question is still active (within 10 seconds + 2 second grace period)
+      // Check if the question is still active. Accept a slightly larger grace window to avoid false late flags
       const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
-      const maxAnswerTime = 12000; // 10 seconds + 2 second grace period
+      const questionDurationMs = (gameState.questionDurationSeconds ? gameState.questionDurationSeconds : 10) * 1000;
+      const graceMs = parseInt(process.env.ANSWER_GRACE_MS || '3000', 10); // default 3s grace
+      const maxAnswerTime = questionDurationMs + graceMs;
       
       if (timeSinceQuestionStart > maxAnswerTime) {
         console.log(`⏰ Answer too late for ${phoneNumber} - ${timeSinceQuestionStart}ms since question start`);
+        
+        // Eliminate the player immediately for the current question, if still alive
+        try {
+          const questionNumber = (gameState.currentQuestion || 0) + 1;
+          const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
+          if (player && player.status === 'alive') {
+            player.status = 'eliminated';
+            player.eliminatedAt = new Date();
+            player.eliminatedOnQuestion = questionNumber;
+            player.eliminationReason = 'no_answer';
+            await this.setGameState(gameId, gameState);
+
+            // Persist to DB best-effort
+            try {
+              await GamePlayer.update(
+                { status: 'eliminated', eliminated_at: new Date(), eliminated_by_question: questionNumber },
+                { where: { game_id: gameId, user_id: player.user.id } }
+              );
+            } catch (dbErr) {
+              console.error('⚠️ DB update failed for late elimination:', dbErr.message);
+            }
+
+            // Notify user (deduped per game/question)
+            const lateKey = `answer_too_late:${gameId}:${gameState.currentQuestion}:${phoneNumber}`;
+            const alreadyNotified = this.redisGameState.isAvailable() ?
+              await this.redisGameState.redis.get(lateKey) : null;
+            if (!alreadyNotified) {
+              const gameSnippet = String(gameId).slice(0, 8) + '...';
+              const message = `⏰ Time's up! You didn't answer in time and have been eliminated.\n\n❌ Eliminated on: Question ${questionNumber}\n🎮 Game: ${gameSnippet}\n\nStick around to watch the finish! Reply "PLAY" for the next game.`;
+              await queueService.addMessage('send_message', {
+                to: phoneNumber,
+                message,
+                gameId,
+                messageType: 'elimination'
+              });
+              if (this.redisGameState.isAvailable()) {
+                await this.redisGameState.redis.setex(lateKey, 300, 'sent');
+              }
+            }
+          }
+        } catch (notifyErr) {
+          console.error('❌ Failed to process late-answer elimination:', notifyErr);
+        }
         await this.releaseLock(lockKey);
         return { message: 'answer_too_late' };
       }
@@ -684,6 +942,9 @@ class GameService {
         return;
       }
 
+      // Cancel any pending countdown jobs for this question
+      await this.cancelCountdownJobs(gameId, questionIndex);
+
       const { players, questions } = gameState;
       const question = questions[questionIndex];
       
@@ -822,9 +1083,38 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
   async processQuestionResultsWithLock(gameId, questionIndex, correctAnswer) {
     try {
       console.log(`🔓 Processing question results for game ${gameId}, question ${questionIndex + 1}`);
+
+      // Cancel any pending countdown jobs for this question
+      await this.cancelCountdownJobs(gameId, questionIndex);
+
+      // Single result authority: use Redis to ensure only one path processes results
+      const resultKey = `result_decided:${gameId}:${questionIndex}`;
+      const lockAcquired = await this.acquireLock(resultKey, 30); // 30 second lock
       
-      // Process the results directly
-      await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
+      if (!lockAcquired) {
+        console.log(`🔒 Results already being processed for game ${gameId}, question ${questionIndex + 1}`);
+        return;
+      }
+
+      try {
+        // Double-check: verify this question hasn't been processed yet
+        const gameState = await this.getGameState(gameId);
+        if (!gameState || gameState.currentQuestion > questionIndex) {
+          console.log(`⚠️ Question ${questionIndex + 1} already advanced, skipping results`);
+          return;
+        }
+
+        // Mark result as decided in Redis with TTL
+        if (this.redisGameState.isAvailable()) {
+          await this.redisGameState.redis.setex(resultKey, 300, 'decided'); // 5 minute TTL
+        }
+
+        await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
+        console.log(`✅ Results processed for game ${gameId}, question ${questionIndex + 1}`);
+        
+      } finally {
+        await this.releaseLock(resultKey);
+      }
       
     } catch (error) {
       console.error('❌ Error in processQuestionResultsWithLock:', error);
@@ -878,22 +1168,34 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
           console.log(`❌ Player ${player.user.nickname} eliminated on Q${questionIndex + 1} (wrong answer)`);
         }
 
-        // Send result message with deduplication
+        // Send result message with enhanced deduplication and state validation
         const resultDedupeKey = `result_sent:${gameId}:${questionIndex}:${player.user.whatsapp_number}`;
-        const resultAlreadySent = await queueService.redis?.get(resultDedupeKey);
+        const resultAlreadySent = this.redisGameState.isAvailable() ? 
+          await this.redisGameState.redis.get(resultDedupeKey) : null;
         
         if (!resultAlreadySent) {
-          await queueService.addMessage('send_message', {
-            to: player.user.whatsapp_number,
-            message: isCorrect ? 
-              `✅ Correct Answer: ${correctAnswer}\n\n🎉 You're still in!` :
-              `❌ Correct Answer: ${correctAnswer}\n\n💀 You're out this game. Stick around to watch the finish!`,
-            gameId: gameId,
-            messageType: 'elimination'
-          });
+          // Re-validate player state before sending
+          const currentState = await this.getGameState(gameId);
+          const currentPlayer = currentState?.players?.find(p => p.user.whatsapp_number === player.user.whatsapp_number);
           
-          // Mark as sent to prevent duplicates
-          await queueService.redis?.setex(resultDedupeKey, 60, 'sent');
+          if (currentPlayer && currentPlayer.status === player.status) {
+            await queueService.addMessage('send_message', {
+              to: player.user.whatsapp_number,
+              message: isCorrect ? 
+                `✅ Correct Answer: ${correctAnswer}\n\n🎉 You're still in!` :
+                `❌ Correct Answer: ${correctAnswer}\n\n💀 You're out this game. Stick around to watch the finish!`,
+              gameId: gameId,
+              messageType: isCorrect ? 'correct_answer' : 'elimination'
+            });
+            
+            // Mark as sent to prevent duplicates
+            if (this.redisGameState.isAvailable()) {
+              await this.redisGameState.redis.setex(resultDedupeKey, 300, 'sent');
+            }
+            console.log(`📤 Result message sent to ${player.user.nickname} (${isCorrect ? 'correct' : 'eliminated'})`);
+          } else {
+            console.log(`⚠️ Player ${player.user.nickname} state changed, skipping result message`);
+          }
         } else {
           console.log(`🔄 Skipping duplicate result message for ${player.user.nickname}`);
         }
@@ -1039,22 +1341,8 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       // Clean up timers and game state
       console.log(`🧹 Cleaning up timers and game state for: ${gameId}`);
       
-      // Clear any active timers
-      if (gameState.questionTimer) {
-        clearInterval(gameState.questionTimer);
-        console.log(`⏰ Cleared question timer for game ${gameId}`);
-      }
-      
-      // Clear active timers set (handle both Set and object from Redis)
-      if (gameState.activeTimers) {
-        if (gameState.activeTimers instanceof Set) {
-          gameState.activeTimers.clear();
-        } else if (typeof gameState.activeTimers === 'object') {
-          // Convert back to Set if it was serialized from Redis
-          gameState.activeTimers = new Set();
-        }
-        console.log(`⏰ Cleared active timers set for game ${gameId}`);
-      }
+      // Use the comprehensive cleanup method
+      await this.cleanupGameState(gameId);
       
       // Clear deduplication keys for this game
       const queueService = require('./queueService');

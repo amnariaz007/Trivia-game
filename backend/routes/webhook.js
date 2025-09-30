@@ -42,9 +42,15 @@ router.get('/', (req, res) => {
 // Message webhook
 router.post('/', async (req, res) => {
   try {
-    console.log('📥 Received webhook at:', new Date().toISOString());
-    console.log('📥 Webhook body:', JSON.stringify(req.body, null, 2));
-    console.log('📥 Webhook headers:', JSON.stringify(req.headers, null, 2));
+    const debugWebhook = process.env.WEBHOOK_DEBUG === 'true';
+    if (debugWebhook) {
+      console.log('📥 Received webhook at:', new Date().toISOString());
+      console.log('📥 Webhook body:', JSON.stringify(req.body, null, 2));
+      console.log('📥 Webhook headers:', JSON.stringify(req.headers, null, 2));
+    } else {
+      const entries = Array.isArray(req.body?.entry) ? req.body.entry.length : 0;
+      console.log(`📥 Webhook received (entries=${entries})`);
+    }
     
     // Log webhook to monitoring system
     try {
@@ -191,8 +197,11 @@ router.post('/', async (req, res) => {
 // Process individual message
 async function processMessage(message, contact) {
   try {
-    console.log('🔍 Processing message:', JSON.stringify(message, null, 2));
-    console.log('🔍 Contact info:', JSON.stringify(contact, null, 2));
+    const debugWebhook = process.env.WEBHOOK_DEBUG === 'true';
+    if (debugWebhook) {
+      console.log('🔍 Processing message:', JSON.stringify(message, null, 2));
+      console.log('🔍 Contact info:', JSON.stringify(contact, null, 2));
+    }
     
     // Use wa_id from contact info (E.164 format) and normalize it
     const phoneNumber = normalizePhoneNumber(contact?.wa_id || message.from);
@@ -200,10 +209,12 @@ async function processMessage(message, contact) {
     const buttonResponse = message.interactive?.button_reply?.title || '';
     const finalMessage = messageText || buttonResponse;
 
-    console.log(`📱 Processing message from ${phoneNumber}:`);
-    console.log(`📱 Text: "${messageText}"`);
-    console.log(`📱 Button: "${buttonResponse}"`);
-    console.log(`📱 Final: "${finalMessage}"`);
+    if (debugWebhook) {
+      console.log(`📱 Processing message from ${phoneNumber}:`);
+      console.log(`📱 Text: "${messageText}"`);
+      console.log(`📱 Button: "${buttonResponse}"`);
+      console.log(`📱 Final: "${finalMessage}"`);
+    }
 
     // Get or create user
     let user = await User.findByWhatsAppNumber(phoneNumber);
@@ -479,7 +490,33 @@ async function handleJoinCommand(user) {
       return;
     }
     
-    // Note: Expiration validation moved to frontend
+    // Check if game is in progress or recently ended
+    if (activeGame.status === 'in_progress') {
+      await queueService.addMessage('send_message', {
+        to: user.whatsapp_number,
+        message: '🚫 The game is currently in progress. You cannot join mid-game.\n\nReply "PLAY" to get a reminder for the next game.',
+        priority: 'high',
+        messageType: 'join_response'
+      });
+      return;
+    }
+    
+    if (activeGame.status === 'completed' || activeGame.status === 'cancelled') {
+      // Check if game ended recently (within last 5 minutes)
+      const gameEndTime = new Date(activeGame.updated_at || activeGame.created_at);
+      const timeSinceEnd = Date.now() - gameEndTime.getTime();
+      const fiveMinutes = 5 * 60 * 1000;
+      
+      if (timeSinceEnd < fiveMinutes) {
+        await queueService.addMessage('send_message', {
+          to: user.whatsapp_number,
+          message: '🎮 The game just ended. Stay tuned for the next game announcement!\n\nReply "PLAY" to get a reminder.',
+          priority: 'high',
+          messageType: 'join_response'
+        });
+        return;
+      }
+    }
     
     if (activeGame.status !== 'pre_game') {
       await queueService.addMessage('send_message', {

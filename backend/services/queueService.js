@@ -149,10 +149,12 @@ class QueueService {
     }
 
     console.log('🔧 Setting up queue handlers...');
-    console.log('⚡ Message queue concurrency: 10 workers (stable)');
-    console.log('⚡ Game queue concurrency: 5 workers (stable)');
+    const MESSAGE_CONCURRENCY = parseInt(process.env.MESSAGE_QUEUE_CONCURRENCY || '25', 10);
+    const GAME_CONCURRENCY = parseInt(process.env.GAME_QUEUE_CONCURRENCY || '5', 10);
+    console.log(`⚡ Message queue concurrency: ${MESSAGE_CONCURRENCY}`);
+    console.log(`⚡ Game queue concurrency: ${GAME_CONCURRENCY}`);
 
-    this.messageQueue.process('send_message', 10, async (job) => {
+    this.messageQueue.process('send_message', MESSAGE_CONCURRENCY, async (job) => {
       try {
         console.log('📤 Processing send_message job:', job.id);
         return await this.processMessage(job.data);
@@ -162,7 +164,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_template', 10, async (job) => {
+    this.messageQueue.process('send_template', MESSAGE_CONCURRENCY, async (job) => {
       try {
         console.log('📤 Processing send_template job:', job.id);
         return await this.processTemplate(job.data);
@@ -172,7 +174,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_question', 10, async (job) => {
+    this.messageQueue.process('send_question', MESSAGE_CONCURRENCY, async (job) => {
       try {
         console.log('📤 Processing send_question job:', job.id);
         return await this.processQuestion(job.data);
@@ -182,7 +184,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_elimination', 10, async (job) => {
+    this.messageQueue.process('send_elimination', MESSAGE_CONCURRENCY, async (job) => {
       try {
         console.log('📤 Processing send_elimination job:', job.id);
         return await this.processElimination(job.data);
@@ -192,7 +194,7 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('game_timer', 5, async (job) => {
+    this.gameQueue.process('game_timer', GAME_CONCURRENCY, async (job) => {
       try {
         console.log('⏰ Processing game_timer job:', job.id);
         return await this.processGameTimer(job.data);
@@ -202,12 +204,26 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('question_timer', 5, async (job) => {
+    this.gameQueue.process('question_timer', GAME_CONCURRENCY, async (job) => {
       try {
         console.log('❓ Processing question_timer job:', job.id);
         return await this.processQuestionTimer(job.data);
       } catch (error) {
         console.error('❌ Question timer processing error:', error);
+        throw error;
+      }
+    });
+
+    this.gameQueue.process('question_countdown', GAME_CONCURRENCY, async (job) => {
+      try {
+        console.log('⏳ Processing question_countdown job:', job.id, 'data:', JSON.stringify(job.data));
+        console.log('⏳ Job scheduled at:', new Date(job.timestamp).toISOString());
+        console.log('⏳ Job delay was:', job.delay, 'ms');
+        const result = await this.processCountdown(job.data);
+        console.log('⏳ Countdown job completed successfully:', job.id);
+        return result;
+      } catch (error) {
+        console.error('❌ Question countdown processing error:', error);
         throw error;
       }
     });
@@ -250,19 +266,8 @@ class QueueService {
 
   async addMessage(type, data, options = {}) {
     console.log(`📤 Adding message to queue: ${type}`, { to: data.to, messageLength: data.message?.length, gameId: data.gameId });
-    
-    if (!this.messageQueue) {
-      console.log('⚠️  Message queue not available, skipping message');
-      console.log('🔍 Queue status:', {
-        messageQueue: !!this.messageQueue,
-        gameQueue: !!this.gameQueue,
-        redis: !!this.redis,
-        redisConnected: this.redisConnected
-      });
-      return null;
-    }
 
-    // Use batching for send_message type to handle 200+ users efficiently
+    // Handle plain text messages even without Redis/queues
     if (type === 'send_message') {
       // For high priority messages (like JOIN responses), send immediately
       if (data.priority === 'high' || data.messageType === 'join_response') {
@@ -286,6 +291,35 @@ class QueueService {
         console.error('❌ Batcher error details:', error);
         return null;
       }
+    }
+
+    // If queues are unavailable, attempt direct sends for certain types
+    if (!this.messageQueue) {
+      console.log('⚠️  Message queue not available, attempting direct send for type:', type);
+      try {
+        const whatsappService = require('./whatsappService');
+        if (type === 'send_question') {
+          return await whatsappService.sendQuestion(
+            data.to,
+            data.questionText,
+            data.options,
+            data.questionNumber,
+            data.correctAnswer
+          );
+        }
+        if (type === 'send_elimination') {
+          return await whatsappService.sendEliminationMessage(
+            data.to,
+            data.correctAnswer,
+            data.isCorrect
+          );
+        }
+      } catch (e) {
+        console.error('❌ Direct send fallback failed:', e?.message || e);
+        return null;
+      }
+      // Unknown type without queue
+      return null;
     }
 
     try {
@@ -347,7 +381,14 @@ class QueueService {
         removeOnComplete: 50,
         removeOnFail: 25
       });
-      console.log(`⏰ Added game timer job ${job.id} with ${delay}s delay`);
+      console.log(`⏰ Added game timer job ${job.id} with ${delay}s delay, type: ${type}, data:`, JSON.stringify(data));
+      
+      // For countdown jobs, also log the expected execution time
+      if (type === 'question_countdown') {
+        const executionTime = new Date(Date.now() + (delay * 1000));
+        console.log(`⏳ Countdown job will execute at: ${executionTime.toISOString()}`);
+      }
+      
       return job;
     } catch (error) {
       console.error('❌ Failed to add game timer to queue:', error.message);
@@ -358,8 +399,8 @@ class QueueService {
   async processMessage(data) {
     const { to, message, gameId, messageType } = data;
     
-    // Create deduplication key for critical game messages (but be less aggressive)
-    if (gameId && messageType && ['game_start', 'elimination', 'emergency_end'].includes(messageType)) {
+    // Create deduplication key for game messages
+    if (gameId && messageType) {
       const dedupeKey = `message_sent:${gameId}:${messageType}:${to}`;
       
       if (this.redis) {
@@ -370,8 +411,9 @@ class QueueService {
             return { message: 'duplicate_skipped' };
           }
           
-          // Mark as sent with 30 second expiration (shorter for better responsiveness)
-          await this.redis.setex(dedupeKey, 30, 'sent');
+          // Mark as sent with short expiration for countdowns
+          const ttl = (typeof messageType === 'string' && messageType.startsWith('countdown')) ? 10 : 30;
+          await this.redis.setex(dedupeKey, ttl, 'sent');
           console.log(`✅ ${messageType} message marked as sent to ${to}`);
         } catch (error) {
           console.error('❌ Redis message deduplication error:', error);
@@ -441,9 +483,21 @@ class QueueService {
   }
 
   async processQuestionTimer(data) {
-    const { gameId, questionId } = data;
+    const { gameId, questionIndex } = data;
     const gameService = require('./gameService');
-    return await gameService.timeoutQuestion(gameId, questionId);
+    return await gameService.handleQuestionTimeout(gameId, questionIndex);
+  }
+
+  async processCountdown(data) {
+    const { gameId, questionIndex, secondsLeft, scheduledAt, totalSeconds } = data;
+    const gameService = require('./gameService');
+    
+    console.log(`⏳ Processing countdown: gameId=${gameId}, question=${questionIndex + 1}, secondsLeft=${secondsLeft}, scheduledAt=${scheduledAt}, totalSeconds=${totalSeconds}`);
+    
+    return await gameService.sendCountdown(gameId, questionIndex, secondsLeft, {
+      scheduledAt,
+      totalSeconds
+    });
   }
 
   async getQueueStats() {
@@ -476,6 +530,35 @@ class QueueService {
         messageQueue: { available: false, error: error.message },
         gameQueue: { available: false, error: error.message }
       };
+    }
+  }
+
+  // Clear all deduplication keys for a game
+  async clearGameDeduplication(gameId) {
+    try {
+      if (!this.redis) return;
+      
+      // Get all keys matching the game pattern
+      const pattern = `*${gameId}*`;
+      const keys = [];
+      let cursor = '0';
+      
+      do {
+        const [nextCursor, batch] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        if (Array.isArray(batch) && batch.length > 0) {
+          keys.push(...batch);
+        }
+      } while (cursor !== '0');
+      
+      // Delete all matching keys
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+        console.log(`🗑️ Cleared ${keys.length} deduplication keys for game ${gameId}`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error clearing game deduplication:', error);
     }
   }
 
