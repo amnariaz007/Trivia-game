@@ -24,7 +24,7 @@ async function checkUserCount() {
     const sampleUsers = await User.findAll({
       attributes: ['nickname', 'whatsapp_number', 'is_active'],
       limit: 5,
-      order: [['created_at', 'DESC']]
+      order: [['createdAt', 'DESC']]
     });
 
     console.log(`\n📋 Sample users (latest 5):`);

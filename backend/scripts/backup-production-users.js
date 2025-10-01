@@ -37,8 +37,8 @@ async function backupProductionUsers() {
         is_active: user.is_active,
         last_activity: user.last_activity,
         registration_completed: user.registration_completed,
-        created_at: user.created_at,
-        updated_at: user.updated_at
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
       }))
     };
     

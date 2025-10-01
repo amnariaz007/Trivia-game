@@ -20,11 +20,11 @@ async function extractUsersForRailway() {
         'nickname', 
         'whatsapp_number',
         'is_active',
-        'created_at',
-        'updated_at',
+        'createdAt',
+        'updatedAt',
         'last_activity'
       ],
-      order: [['created_at', 'ASC']]
+      order: [['createdAt', 'ASC']]
     });
 
     console.log(`📊 Found ${users.length} users in production database`);
@@ -38,8 +38,8 @@ async function extractUsersForRailway() {
         nickname: user.nickname,
         whatsapp_number: user.whatsapp_number,
         is_active: user.is_active,
-        created_at: user.created_at,
-        updated_at: user.updated_at,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
         last_activity: user.last_activity
       }))
     };

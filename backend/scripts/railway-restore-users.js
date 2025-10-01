@@ -33,8 +33,8 @@ async function restoreUsersFromBackup() {
             nickname: userData.nickname,
             whatsapp_number: userData.whatsapp_number,
             is_active: userData.is_active,
-            created_at: userData.created_at,
-            updated_at: userData.updated_at,
+            createdAt: userData.createdAt,
+            updatedAt: userData.updatedAt,
             last_activity: userData.last_activity
           }
         });
