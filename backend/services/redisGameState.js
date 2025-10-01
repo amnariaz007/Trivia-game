@@ -184,7 +184,7 @@ class RedisGameState {
   }
 
   /**
-   * Get all active game IDs
+   * Get all active game IDs using SCAN to avoid blocking Redis
    * @returns {Promise<Array>} Array of game IDs
    */
   async getActiveGameIds() {
@@ -194,7 +194,14 @@ class RedisGameState {
 
     try {
       const pattern = `${this.keyPrefix}*`;
-      const keys = await this.redis.keys(pattern);
+      const keys = [];
+      let cursor = '0';
+      
+      do {
+        const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = result[0];
+        keys.push(...result[1]);
+      } while (cursor !== '0');
       
       return keys.map(key => key.replace(this.keyPrefix, ''));
     } catch (error) {

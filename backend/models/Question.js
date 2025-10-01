@@ -85,8 +85,8 @@ const Question = sequelize.define('Question', {
 }, {
   tableName: 'questions',
   timestamps: true,
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
   indexes: [
     {
       fields: ['game_id']

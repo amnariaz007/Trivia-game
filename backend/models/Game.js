@@ -52,8 +52,8 @@ const Game = sequelize.define('Game', {
 }, {
   tableName: 'games',
   timestamps: true,
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
   indexes: [
     {
       fields: ['status']
@@ -62,7 +62,7 @@ const Game = sequelize.define('Game', {
       fields: ['start_time']
     },
     {
-      fields: ['createdAt']
+      fields: ['created_at']
     }
   ]
 });
@@ -101,7 +101,7 @@ Game.getActiveGame = async function() {
     where: {
       status: ['scheduled', 'pre_game', 'in_progress']
     },
-    order: [['createdAt', 'DESC']]
+    order: [['created_at', 'DESC']]
   });
 };
 

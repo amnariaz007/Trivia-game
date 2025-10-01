@@ -11,7 +11,20 @@
     "format": "prettier --write .",
     "init-db": "node scripts/init-db.js",
     "init-db-production": "node scripts/init-db-production.js",
-    "setup-test": "node scripts/test-setup.js"
+    "setup-test": "node scripts/test-setup.js",
+    "start:production": "../scripts/start-production.sh",
+    "start:development": "../scripts/start-development.sh",
+    "monitor": "../scripts/monitor.sh",
+    "deploy:railway": "../scripts/deploy-railway.sh",
+    "load-test": "../scripts/load-test.sh",
+    "pm2:start": "pm2 start ecosystem.config.js --env production",
+    "pm2:stop": "pm2 stop all",
+    "pm2:restart": "pm2 restart all",
+    "pm2:reload": "pm2 reload all",
+    "pm2:delete": "pm2 delete all",
+    "pm2:logs": "pm2 logs",
+    "pm2:monit": "pm2 monit",
+    "pm2:status": "pm2 status"
   },
   "keywords": [
     "whatsapp",
@@ -24,6 +37,7 @@
   "dependencies": {
     "axios": "^1.6.0",
     "bull": "^4.12.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
     "dotenv": "^16.3.1",
@@ -33,6 +47,7 @@
     "ioredis": "^5.3.2",
     "joi": "^17.11.0",
     "moment": "^2.29.4",
+    "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "pg": "^8.11.3",
     "redis": "^4.6.10",
@@ -40,9 +55,11 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@railway/cli": "^4.10.0",
     "eslint": "^8.54.0",
     "jest": "^29.7.0",
     "nodemon": "^3.0.1",
+    "pm2": "^6.0.13",
     "prettier": "^3.1.0"
   },
   "engines": {

@@ -481,6 +481,17 @@ async function handleJoinCommand(user) {
     
     // Note: Expiration validation moved to frontend
     
+    // Suppress JOIN confirmations during in-progress or just-ended games
+    if (activeGame.status === 'in_progress') {
+      console.log(`🚫 Suppressing JOIN confirmation for ${user.whatsapp_number} - game in progress`);
+      return; // Silent suppression during active games
+    }
+    
+    if (activeGame.status === 'finished') {
+      console.log(`🚫 Suppressing JOIN confirmation for ${user.whatsapp_number} - game just ended`);
+      return; // Silent suppression for recently ended games
+    }
+    
     if (activeGame.status !== 'pre_game') {
       await queueService.addMessage('send_message', {
         to: user.whatsapp_number,
@@ -592,15 +603,15 @@ Reply "PLAY" for a reminder.`
 // Handle game answer
 async function handleGameAnswer(user, answer) {
   try {
-    console.log(`🎯 Handling game answer from ${user.whatsapp_number}: ${answer}`);
+    console.log(`🎯 [WEBHOOK] Handling game answer from ${user.whatsapp_number}: "${answer}" at ${new Date().toISOString()}`);
     const gameService = require('../services/gameService');
     
     // Check if user is in an active game
     const activeGame = await gameService.getActiveGameForPlayer(user.whatsapp_number);
-    console.log(`🔍 Active game found:`, activeGame ? 'YES' : 'NO');
+    console.log(`🔍 [WEBHOOK] Active game found:`, activeGame ? 'YES' : 'NO');
     
     if (!activeGame) {
-      console.log(`❌ No active game found for player ${user.whatsapp_number}`);
+      console.log(`❌ [WEBHOOK] No active game found for player ${user.whatsapp_number}`);
       await queueService.addMessage('send_message', {
         to: user.whatsapp_number,
         message: '❓ No active game found. Use these commands:\n\n🎮 PLAY - Get reminder for next game\n📝 JOIN - Join current game\n❓ HELP - Show this message'
@@ -608,16 +619,20 @@ async function handleGameAnswer(user, answer) {
       return;
     }
 
-    console.log(`✅ Processing answer "${answer}" for game ${activeGame.gameId}`);
-    console.log(`🔍 Game state: currentQuestion=${activeGame.gameState.currentQuestion}, players=${activeGame.gameState.players.length}`);
+    console.log(`✅ [WEBHOOK] Processing answer "${answer}" for game ${activeGame.gameId}`);
+    console.log(`🔍 [WEBHOOK] Game state: currentQuestion=${activeGame.gameState.currentQuestion}, players=${activeGame.gameState.players.length}`);
+    console.log(`🔍 [WEBHOOK] Player status: ${activeGame.player.status}`);
+    console.log(`🔍 [WEBHOOK] Current question text: "${activeGame.gameState.questions[activeGame.gameState.currentQuestion]?.question_text}"`);
+    console.log(`🔍 [WEBHOOK] Current question correct answer: "${activeGame.gameState.questions[activeGame.gameState.currentQuestion]?.correct_answer}"`);
     
     // Handle the answer
+    console.log(`🚀 [WEBHOOK] Calling gameService.handlePlayerAnswer...`);
     const result = await gameService.handlePlayerAnswer(activeGame.gameId, user.whatsapp_number, answer);
-    console.log(`📊 Answer processing result:`, result);
+    console.log(`📊 [WEBHOOK] Answer processing result:`, result);
 
   } catch (error) {
-    console.error('❌ Error handling game answer:', error);
-    console.error('❌ Error stack:', error.stack);
+    console.error('❌ [WEBHOOK] Error handling game answer:', error);
+    console.error('❌ [WEBHOOK] Error stack:', error.stack);
     await queueService.addMessage('send_message', {
       to: user.whatsapp_number,
       message: '❌ Something went wrong. Please try again.'

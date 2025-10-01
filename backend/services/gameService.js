@@ -10,8 +10,12 @@ class GameService {
     this.activeGames = new Map(); // In-memory game state (fallback)
     this.redisGameState = new RedisGameState(); // Redis game state (primary)
     this.circuitBreaker = new CircuitBreaker();
+    this.activeTimers = new Map(); // Store timer objects in memory (not in Redis)
+    this.ANSWER_GRACE_MS = parseInt(process.env.ANSWER_GRACE_MS) || 3000; // Default 3 seconds
     console.log('✅ Circuit Breaker initialized for GameService');
     console.log('✅ Redis Game State initialized for GameService');
+    console.log('✅ Active Timers Map initialized for GameService');
+    console.log(`✅ Answer grace period set to ${this.ANSWER_GRACE_MS}ms`);
   }
 
   /**
@@ -129,9 +133,62 @@ class GameService {
   // Generate timer bar visualization
   // Timer bar function removed - no more timer notifications
 
+  // Clear terminal for easier debugging
+  clearTerminal() {
+    // Clear terminal using ANSI escape codes
+    process.stdout.write('\x1B[2J\x1B[0f');
+    console.log('🧹 Terminal cleared for new game debugging');
+    console.log('='.repeat(80));
+    console.log('🎮 NEW GAME STARTING - CLEAN LOGS');
+    console.log('='.repeat(80));
+  }
+
+  // Clear stale Redis keys that might cause games to get stuck
+  async clearStaleGameKeys(gameId) {
+    try {
+      const queueService = require('./queueService');
+      if (!queueService.redis) {
+        console.log('⚠️ Redis not available for clearing stale keys');
+        return;
+      }
+
+      console.log(`🧹 Clearing stale Redis keys for game ${gameId}...`);
+      
+      // Clear result_decided keys for this game
+      const resultKeys = await queueService.redis.keys(`result_decided:${gameId}:*`);
+      if (resultKeys.length > 0) {
+        await queueService.redis.del(...resultKeys);
+        console.log(`🗑️ Cleared ${resultKeys.length} stale result_decided keys`);
+      }
+
+      // Clear any other game-specific keys that might cause issues
+      const gameKeys = await queueService.redis.keys(`*:${gameId}:*`);
+      if (gameKeys.length > 0) {
+        console.log(`🔍 Found ${gameKeys.length} game-specific keys, clearing potentially stale ones...`);
+        for (const key of gameKeys) {
+          // Only clear keys that might cause processing issues
+          if (key.includes('result_decided') || key.includes('question_sent')) {
+            await queueService.redis.del(key);
+            console.log(`🗑️ Cleared stale key: ${key}`);
+          }
+        }
+      }
+
+      console.log(`✅ Stale Redis keys cleared for game ${gameId}`);
+    } catch (error) {
+      console.error('❌ Error clearing stale Redis keys:', error);
+    }
+  }
+
   // Start a new game
   async startGame(gameId) {
     try {
+      // Clear terminal for easier debugging
+      this.clearTerminal();
+      
+      // Clear any stale Redis keys from previous games
+      await this.clearStaleGameKeys(gameId);
+      
       // Circuit breaker protection for game start
       if (!this.circuitBreaker.canExecute('startGame')) {
         throw new Error('Game service is temporarily unavailable due to high error rate');
@@ -284,18 +341,15 @@ class GameService {
 
       const question = questions[questionIndex];
       gameState.currentQuestion = questionIndex;
-      gameState.questionStartTime = new Date();
       
       // Reset player answer states for new question
       for (const player of players) {
         if (player.status === 'alive') {
           player.answer = null;
           player.answerTime = null;
+          player.resultProcessed = false; // Reset result processing flag for new question
         }
       }
-
-      // Save updated game state to Redis once (optimized)
-      await this.setGameState(gameId, gameState);
 
       // Update game in database with null check
       const game = await Game.findByPk(gameId);
@@ -307,47 +361,63 @@ class GameService {
       game.current_question = questionIndex;
       await game.save();
 
-      // Send question to all alive players
+      // Set question start time FIRST (before any delays)
+      gameState.questionStartTime = new Date();
+      console.log(`⏰ Question ${questionIndex + 1} start time set: ${gameState.questionStartTime.toISOString()}`);
+      
+      // Save updated game state to Redis
+      await this.setGameState(gameId, gameState);
+
+      // Start countdown timer IMMEDIATELY (don't wait for question sending)
+      await this.startQuestionTimer(gameId, questionIndex, 10);
+
+      // Send question to all alive players (non-blocking)
       console.log(`📤 Sending question ${questionIndex + 1} to ${players.filter(p => p.status === 'alive').length} alive players`);
       
+      // Send questions asynchronously (don't await)
+      const sendPromises = [];
       for (const player of players) {
         if (player.status === 'alive') {
           console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.nickname} (${player.user.whatsapp_number})`);
           
           // Send question directly for better reliability
-          try {
-            const whatsappService = require('./whatsappService');
-            await whatsappService.sendQuestion(
-              player.user.whatsapp_number,
-              question.question_text,
-              [question.option_a, question.option_b, question.option_c, question.option_d],
-              questionIndex + 1,
-              question.correct_answer
-            );
-            console.log(`✅ Question sent to ${player.user.nickname}`);
-          } catch (error) {
-            console.error(`❌ Failed to send question to ${player.user.nickname}:`, error);
-            // Try queue as fallback
+          const sendPromise = (async () => {
             try {
-              const job = await queueService.addMessage('send_question', {
-                to: player.user.whatsapp_number,
-                gameId,
-                questionNumber: questionIndex + 1,
-                questionText: question.question_text,
-                options: [question.option_a, question.option_b, question.option_c, question.option_d],
-                correctAnswer: question.correct_answer,
-                timeLimit: 10
-              });
-              console.log(`📤 Queue fallback for ${player.user.nickname}:`, job ? 'SUCCESS' : 'FAILED');
-            } catch (queueError) {
-              console.error(`❌ Queue fallback also failed for ${player.user.nickname}:`, queueError);
+              const whatsappService = require('./whatsappService');
+              await whatsappService.sendQuestion(
+                player.user.whatsapp_number,
+                question.question_text,
+                [question.option_a, question.option_b, question.option_c, question.option_d],
+                questionIndex + 1,
+                question.correct_answer
+              );
+              console.log(`✅ Question sent to ${player.user.nickname}`);
+            } catch (error) {
+              console.error(`❌ Failed to send question to ${player.user.nickname}:`, error);
+              // Try queue as fallback
+              try {
+                const job = await queueService.addMessage('send_question', {
+                  to: player.user.whatsapp_number,
+                  gameId,
+                  questionNumber: questionIndex + 1,
+                  questionText: question.question_text,
+                  options: [question.option_a, question.option_b, question.option_c, question.option_d],
+                  correctAnswer: question.correct_answer,
+                  timeLimit: 10
+                });
+                console.log(`📤 Queue fallback for ${player.user.nickname}:`, job ? 'SUCCESS' : 'FAILED');
+              } catch (queueError) {
+                console.error(`❌ Queue fallback also failed for ${player.user.nickname}:`, queueError);
+              }
             }
-          }
+          })();
+          
+          sendPromises.push(sendPromise);
         }
       }
-
-      // Start countdown timer
-      await this.startQuestionTimer(gameId, questionIndex, 10);
+      
+      // Don't wait for question sending to complete
+      console.log(`📤 Question sending started for ${sendPromises.length} players (non-blocking)`);
 
       console.log(`❓ Question ${questionIndex + 1} started for game ${gameId}`);
 
@@ -364,38 +434,190 @@ class GameService {
     }
   }
 
-  // Start question timer (simplified and reliable)
+  // Start question timer with countdown reminders
   async startQuestionTimer(gameId, questionIndex, totalSeconds) {
     const gameState = await this.getGameState(gameId);
     if (!gameState) return;
 
-    // Clear any existing timer for this question
-    if (gameState.questionTimer) {
-      console.log(`🔄 Clearing existing timer for question ${questionIndex + 1}`);
-      clearInterval(gameState.questionTimer);
-      gameState.questionTimer = null;
+    // Clear any existing timers for this question
+    const timerKey = `${gameId}:${questionIndex}`;
+    if (this.activeTimers && this.activeTimers.has(timerKey)) {
+      console.log(`🔄 Clearing existing timers for question ${questionIndex + 1}`);
+      const timers = this.activeTimers.get(timerKey);
+      if (timers.questionTimer) clearTimeout(timers.questionTimer);
+      if (timers.countdownTimers) {
+        timers.countdownTimers.forEach(timer => clearTimeout(timer));
+      }
+      this.activeTimers.delete(timerKey);
     }
 
-    console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s)`);
+    console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s) with countdown reminders at ${new Date().toISOString()}`);
 
-    let timeLeft = totalSeconds;
-    
-    // Simple timer - no notifications, just wait 10 seconds
-    const timer = setTimeout(async () => {
+    // Schedule 5-second reminder
+    const reminder5s = setTimeout(async () => {
+      console.log(`⏰ 5s reminder firing at ${new Date().toISOString()}`);
+      await this.sendCountdownReminder(gameId, questionIndex, 5);
+    }, 5000);
+
+    // Schedule 2-second reminder  
+    const reminder2s = setTimeout(async () => {
+      console.log(`⏰ 2s reminder firing at ${new Date().toISOString()}`);
+      await this.sendCountdownReminder(gameId, questionIndex, 2);
+    }, 8000);
+
+    // Main timeout (after grace period)
+    const mainTimer = setTimeout(async () => {
       console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout`);
       await this.handleQuestionTimeout(gameId, questionIndex);
-    }, 10000); // 10 seconds
+    }, 10000 + this.ANSWER_GRACE_MS); // 10s + 3s grace = 13s total
 
-    // Store timer reference
-    gameState.questionTimer = timer;
+    // Store timer IDs instead of timer objects (to avoid circular structure)
+    gameState.questionTimerId = mainTimer[Symbol.toPrimitive] ? mainTimer[Symbol.toPrimitive]() : mainTimer.toString();
+    gameState.countdownTimerIds = [reminder5s, reminder2s].map(timer => 
+      timer[Symbol.toPrimitive] ? timer[Symbol.toPrimitive]() : timer.toString()
+    );
+    
+    // Store actual timer objects in memory (not in Redis)
+    if (!this.activeTimers) this.activeTimers = new Map();
+    this.activeTimers.set(`${gameId}:${questionIndex}`, {
+      questionTimer: mainTimer,
+      countdownTimers: [reminder5s, reminder2s]
+    });
+    
+    // Save updated game state (without timer objects)
+    await this.setGameState(gameId, gameState);
   }
 
+  // Send countdown reminder to alive players who haven't answered
+  async sendCountdownReminder(gameId, questionIndex, secondsLeft) {
+    try {
+      const gameState = await this.getGameState(gameId);
+      if (!gameState) {
+        console.log(`❌ Game state not found for countdown reminder: gameId=${gameId}, question=${questionIndex + 1}, secondsLeft=${secondsLeft}`);
+        return;
+      }
+
+      // Check if question is still active (not already processed)
+      if (gameState.currentQuestion > questionIndex) {
+        console.log(`⏰ Skipping ${secondsLeft}s reminder - question ${questionIndex + 1} already processed (current: ${gameState.currentQuestion + 1})`);
+        return;
+      }
+
+      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+      const playersNeedingReminder = alivePlayers.filter(p => !p.answer || p.answer.trim() === '');
+
+      console.log(`⏰ [COUNTDOWN] Game ${gameId} Q${questionIndex + 1}: Sending ${secondsLeft}s reminder to ${playersNeedingReminder.length}/${alivePlayers.length} players`);
+      console.log(`⏰ [COUNTDOWN] Players needing reminder: ${playersNeedingReminder.map(p => p.user.nickname).join(', ')}`);
+
+      let remindersSent = 0;
+      let duplicatesSkipped = 0;
+
+      for (const player of playersNeedingReminder) {
+        // Check if reminder already sent to prevent duplicates
+        const reminderKey = `reminder_sent:${gameId}:${questionIndex}:${secondsLeft}:${player.user.whatsapp_number}`;
+        const alreadySent = await queueService.redis?.get(reminderKey);
+        
+        if (!alreadySent) {
+          await queueService.addMessage('send_message', {
+            to: player.user.whatsapp_number,
+            message: `⏰ ${secondsLeft} seconds left to answer!`,
+            gameId: gameId,
+            messageType: 'countdown_reminder'
+          });
+          
+          // Mark as sent with short expiration
+          await queueService.redis?.setex(reminderKey, 30, 'sent');
+          remindersSent++;
+          console.log(`⏰ [COUNTDOWN] Sent ${secondsLeft}s reminder to ${player.user.nickname}`);
+        } else {
+          duplicatesSkipped++;
+          console.log(`⏰ [COUNTDOWN] Skipped duplicate ${secondsLeft}s reminder for ${player.user.nickname}`);
+        }
+      }
+
+      console.log(`⏰ [COUNTDOWN] Summary: ${remindersSent} sent, ${duplicatesSkipped} duplicates skipped for ${secondsLeft}s reminder`);
+    } catch (error) {
+      console.error(`❌ Error sending ${secondsLeft}s countdown reminder for game ${gameId} Q${questionIndex + 1}:`, error);
+    }
+  }
+
+  // Handle late answer elimination
+  async handleLateAnswerElimination(gameId, phoneNumber, timeSinceQuestionStart) {
+    try {
+      console.log(`⏰ Handling late answer elimination for ${phoneNumber} in game ${gameId}`);
+      
+      const gameState = await this.getGameState(gameId);
+      if (!gameState) {
+        console.log(`❌ Game ${gameId} not found for late answer elimination`);
+        return;
+      }
+
+      const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
+      if (!player || player.status !== 'alive') {
+        console.log(`❌ Player ${phoneNumber} not found or not alive for late answer elimination`);
+        return;
+      }
+
+      // Mark player as eliminated
+      player.status = 'eliminated';
+      player.eliminatedAt = new Date();
+      player.eliminatedOnQuestion = gameState.currentQuestion + 1;
+      player.eliminationReason = 'late_answer';
+      
+      // Update database
+      await GamePlayer.update(
+        { 
+          status: 'eliminated',
+          eliminated_at: new Date(),
+          eliminated_by_question: gameState.currentQuestion + 1
+        },
+        { 
+          where: { 
+            game_id: gameId,
+            user_id: player.user.id 
+          } 
+        }
+      );
+
+      console.log(`❌ Player ${player.user.nickname} eliminated due to late answer on Q${gameState.currentQuestion + 1}`);
+
+      // Save updated game state
+      await this.setGameState(gameId, gameState);
+
+      // Send elimination message with full details
+      await queueService.addMessage('send_message', {
+        to: player.user.whatsapp_number,
+        message: `⏰ Too late! You answered after the question timer ended and have been eliminated.
+
+❌ Eliminated on: Question ${gameState.currentQuestion + 1}
+🎮 Game: ${gameId.slice(0, 8)}...
+⏰ You responded after the timer ended.
+
+Stick around to watch the finish! Reply "PLAY" for the next game.`,
+        gameId: gameId,
+        messageType: 'late_elimination',
+        questionIndex: gameState.currentQuestion
+      });
+
+      // Check if game should end (all players eliminated)
+      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+      
+      if (alivePlayers.length === 0) {
+        console.log(`💀 All players eliminated due to late answers, ending game ${gameId}`);
+        await this.endGame(gameId);
+        return;
+      }
+
+    } catch (error) {
+      console.error('❌ Error handling late answer elimination:', error);
+    }
+  }
 
     // Handle player answer
   async handlePlayerAnswer(gameId, phoneNumber, answer) {
     let lockKey = null; // Declare lockKey outside try block
     try {
-      console.log(`🎯 handlePlayerAnswer called: gameId=${gameId}, phone=${phoneNumber}, answer="${answer}"`);
+      console.log(`🎯 [GAME_SERVICE] handlePlayerAnswer called: gameId=${gameId}, phone=${phoneNumber}, answer="${answer}" at ${new Date().toISOString()}`);
       
       // Use Redis lock to prevent race conditions when multiple players answer simultaneously
       lockKey = `game_lock:${gameId}:answer:${phoneNumber}`;
@@ -413,18 +635,31 @@ class GameService {
         throw new Error('Game not found or not active');
       }
 
-      // Check if the question is still active (within 10 seconds + 2 second grace period)
+      // Check if the question is still active (within question duration + configurable grace period)
       const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
-      const maxAnswerTime = 12000; // 10 seconds + 2 second grace period
+      const questionDuration = 10000; // 10 seconds question duration
+      const maxAnswerTime = questionDuration + this.ANSWER_GRACE_MS;
       
       if (timeSinceQuestionStart > maxAnswerTime) {
-        console.log(`⏰ Answer too late for ${phoneNumber} - ${timeSinceQuestionStart}ms since question start`);
+        console.log(`⏰ Answer too late for ${phoneNumber} - ${timeSinceQuestionStart}ms since question start (max: ${maxAnswerTime}ms)`);
+        
+        // Check if player was already eliminated by timeout
+        const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
+        if (player && player.status === 'eliminated') {
+          console.log(`🔄 Player ${phoneNumber} already eliminated, skipping late answer elimination`);
+          await this.releaseLock(lockKey);
+          return { message: 'already_eliminated' };
+        }
+        
+        // Immediately eliminate player for late answer
+        await this.handleLateAnswerElimination(gameId, phoneNumber, timeSinceQuestionStart);
+        
         await this.releaseLock(lockKey);
-        return { message: 'answer_too_late' };
+        return { message: 'answer_too_late_eliminated' };
       }
       
-      console.log(`✅ Answer from ${phoneNumber} is within time window: ${timeSinceQuestionStart}ms since question start`);
+      console.log(`✅ Answer from ${phoneNumber} is within time window: ${timeSinceQuestionStart}ms since question start (max allowed: ${maxAnswerTime}ms)`);
 
       const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
       if (!player) {
@@ -442,6 +677,7 @@ class GameService {
       // Record the answer normally
       player.answer = answer;
       player.answerTime = Date.now();
+      player.resultProcessed = false; // Mark that result hasn't been processed yet
       console.log(`✅ Set player ${player.user.nickname} answer to: "${player.answer}"`);
       
       // Save immediately to prevent race conditions
@@ -468,6 +704,12 @@ class GameService {
           return { message: 'no_active_question' };
         }
 
+        console.log(`🔍 [GAME_SERVICE] Current question details:`);
+        console.log(`🔍 [GAME_SERVICE] - Question index: ${gameState.currentQuestion}`);
+        console.log(`🔍 [GAME_SERVICE] - Question text: "${currentQuestion.question_text}"`);
+        console.log(`🔍 [GAME_SERVICE] - Correct answer: "${currentQuestion.correct_answer}"`);
+        console.log(`🔍 [GAME_SERVICE] - Total questions: ${gameState.questions.length}`);
+
         // Double-check if player already answered (with lock)
         if (player.answer) {
           console.log(`❌ Player already answered: ${player.answer}`);
@@ -479,11 +721,16 @@ class GameService {
           if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
             console.log(`🎯 All players answered, clearing timer and processing results for already answered player`);
             
-            // Clear the timer since all players have answered
-            if (gameState.questionTimer) {
-              clearInterval(gameState.questionTimer);
-              gameState.questionTimer = null;
-              console.log(`⏰ Cleared timer - all players answered (already answered case)`);
+            // Clear timers using the new timer management system
+            const timerKey = `${gameId}:${gameState.currentQuestion}`;
+            if (this.activeTimers && this.activeTimers.has(timerKey)) {
+              const timers = this.activeTimers.get(timerKey);
+              if (timers.questionTimer) clearTimeout(timers.questionTimer);
+              if (timers.countdownTimers) {
+                timers.countdownTimers.forEach(timer => clearTimeout(timer));
+              }
+              this.activeTimers.delete(timerKey);
+              console.log(`⏰ Cleared all timers - all players answered (already answered case)`);
             }
             
             setTimeout(async () => {
@@ -508,6 +755,8 @@ class GameService {
         console.log(`🔍 Answer comparison:`);
         console.log(`🔍 Player answer: "${answer}"`);
         console.log(`🔍 Correct answer: "${currentQuestion.correct_answer}"`);
+        console.log(`🔍 Normalized player answer: "${answer.toLowerCase().trim()}"`);
+        console.log(`🔍 Normalized correct answer: "${currentQuestion.correct_answer.toLowerCase().trim()}"`);
         console.log(`🔍 Is correct: ${isCorrect}`);
 
         // Save to database - first ensure game exists in database
@@ -587,31 +836,46 @@ class GameService {
         const answeredPlayers = alivePlayers.filter(p => p.answer);
         
         console.log(`🔍 Answer check: ${answeredPlayers.length}/${alivePlayers.length} players answered`);
+        console.log(`🔍 Answered players:`, answeredPlayers.map(p => `${p.user.nickname} (${p.answer})`));
+        console.log(`🔍 Non-answered players:`, alivePlayers.filter(p => !p.answer).map(p => p.user.nickname));
         
-        // Check if all alive players have answered
-        if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
-          console.log(`🎯 All remaining players answered, clearing timer and processing results immediately`);
+        // Process results immediately when any player answers (sudden-death style)
+        if (answeredPlayers.length > 0) {
+          console.log(`🎯 ${answeredPlayers.length} players answered, processing results immediately (sudden-death mode)`);
           
-          // Clear the timer since all players have answered
-          if (gameState.questionTimer) {
-            clearInterval(gameState.questionTimer);
-            gameState.questionTimer = null;
-            console.log(`⏰ Cleared timer - all players answered`);
+          // Clear the timer since we're processing results now
+          const timerKey = `${gameId}:${gameState.currentQuestion}`;
+          if (this.activeTimers && this.activeTimers.has(timerKey)) {
+            const timers = this.activeTimers.get(timerKey);
+            if (timers.questionTimer) {
+              clearTimeout(timers.questionTimer);
+              console.log(`⏰ Cleared main timer - processing results immediately`);
+            }
+            if (timers.countdownTimers) {
+              timers.countdownTimers.forEach(timer => clearTimeout(timer));
+              console.log(`⏰ Cleared countdown timers - processing results immediately`);
+            }
+            this.activeTimers.delete(timerKey);
+            console.log(`⏰ Removed timer entry for ${timerKey}`);
           }
           
-          // All players answered, process results immediately
+          // Process results immediately for answered players
           setTimeout(async () => {
-            console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1}`);
+            console.log(`🚀 [GAME_SERVICE] Processing question results for Q${gameState.currentQuestion + 1} (${answeredPlayers.length} players answered)`);
+            console.log(`🚀 [GAME_SERVICE] Calling processQuestionResultsWithLock with questionIndex=${gameState.currentQuestion}, correctAnswer="${currentQuestion.correct_answer}"`);
             await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
-          }, 1000); // Reduced delay to 1 second for faster progression
+            
+            // Note: Players who didn't answer will be handled by the timeout handler
+            console.log(`📊 [GAME_SERVICE] Processed results for ${answeredPlayers.length} players who answered Q${gameState.currentQuestion + 1}`);
+          }, 1000); // Small delay to ensure answer is fully processed
         } else {
-          console.log(`⏳ ${alivePlayers.length - answeredPlayers.length} players still need to answer, waiting...`);
-          // Not all players answered yet, continue waiting
+          console.log(`⏳ No players have answered yet, waiting for answers or timeout...`);
+          // No players answered yet, continue waiting for answers or timeout
         }
 
         return {
-          correct: answer === gameState.questions[gameState.currentQuestion].correct_answer,
-          correctAnswer: gameState.questions[gameState.currentQuestion].correct_answer
+          correct: isCorrect,
+          correctAnswer: currentQuestion.correct_answer
         };
 
       } finally {
@@ -687,7 +951,46 @@ class GameService {
       const { players, questions } = gameState;
       const question = questions[questionIndex];
       
-      console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations`);
+      console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations at ${new Date().toISOString()}`);
+
+      // Check if timer was already cleared (meaning results were processed)
+      const timerKey = `${gameId}:${questionIndex}`;
+      if (!this.activeTimers || !this.activeTimers.has(timerKey)) {
+        console.log(`🔄 Timer for Q${questionIndex + 1} was already cleared, skipping timeout elimination`);
+        return;
+      }
+
+      // Check if all alive players have been processed (either answered or eliminated)
+      const alivePlayersForTimeout = players.filter(p => p.status === 'alive');
+      const processedPlayers = alivePlayersForTimeout.filter(p => p.resultProcessed || p.status === 'eliminated');
+      
+      if (processedPlayers.length === alivePlayersForTimeout.length && alivePlayersForTimeout.length > 0) {
+        console.log(`🔄 All ${alivePlayersForTimeout.length} alive players have been processed for Q${questionIndex + 1}, skipping timeout elimination`);
+        return;
+      }
+
+
+      // Find players who didn't answer (these should be eliminated by timeout)
+      const playersWithoutAnswers = players.filter(p => p.status === 'alive' && (!p.answer || p.answer.trim() === ''));
+      const playersWithAnswers = players.filter(p => p.status === 'alive' && p.answer);
+      
+      if (playersWithoutAnswers.length === 0) {
+        console.log(`🔄 All alive players have answered Q${questionIndex + 1}, no timeout eliminations needed`);
+        
+        // If all players answered, check if we need to start the next question
+        if (playersWithAnswers.length > 0) {
+          console.log(`🎯 All ${playersWithAnswers.length} players answered Q${questionIndex + 1}, ensuring next question starts`);
+          
+          // Add a small delay to ensure all answer processing is complete
+          setTimeout(() => {
+            console.log(`🚀 [TIMEOUT_HANDLER] Ensuring next question starts for Q${questionIndex + 2}`);
+            this.startQuestion(gameId, questionIndex + 1);
+          }, 3000); // 3 second delay to ensure all processing is complete
+        }
+        return;
+      }
+
+      console.log(`⏰ ${playersWithoutAnswers.length} players didn't answer Q${questionIndex + 1}, processing timeout eliminations`);
 
       // Eliminate players who didn't answer
       for (const player of players) {
@@ -725,23 +1028,59 @@ class GameService {
 
 ❌ Eliminated on: Question ${questionIndex + 1}
 🎮 Game: ${gameId.slice(0, 8)}...
+⏰ You didn't respond within the time limit.
 
-Stick around to watch the finish! Reply "PLAY" for the next game.`
+Stick around to watch the finish! Reply "PLAY" for the next game.`,
+            gameId: gameId,
+            messageType: 'timeout_elimination',
+            questionIndex: questionIndex
           });
         }
       }
 
-      // Check if game should end
-      const alivePlayers = players.filter(p => p.status === 'alive');
+      // Save updated game state after timeout eliminations
+      await this.setGameState(gameId, gameState);
+
+      // Check if game should end after timeout eliminations
+      const alivePlayersAfterTimeout = gameState.players.filter(p => p.status === 'alive');
       
-      if (alivePlayers.length === 0) {
+      if (alivePlayersAfterTimeout.length === 0) {
         console.log(`💀 All players eliminated on Q${questionIndex + 1} (timeout)`);
         await this.endGame(gameId);
         return;
       }
 
-      // Process question results and continue
-      await this.sendQuestionResults(gameId, questionIndex, question.correct_answer);
+      if (questionIndex + 1 >= gameState.questions.length) {
+        console.log(`🏁 Last question completed. ${alivePlayersAfterTimeout.length} survivors!`);
+        await this.endGame(gameId);
+        return;
+      }
+
+      // Check if any players answered correctly and need result processing
+      const playersWithAnswersAfterTimeout = alivePlayersAfterTimeout.filter(p => p.answer && p.answer.trim() !== '');
+      
+      if (playersWithAnswersAfterTimeout.length > 0) {
+        console.log(`🎯 ${playersWithAnswersAfterTimeout.length} players answered Q${questionIndex + 1}, processing results before next question`);
+        
+        // Process results for players who answered
+        setTimeout(async () => {
+          console.log(`🚀 [TIMEOUT_HANDLER] Processing results for Q${questionIndex + 1} (${playersWithAnswersAfterTimeout.length} players answered)`);
+          await this.processQuestionResultsWithLock(gameId, questionIndex, question.correct_answer);
+          
+          // Then start next question
+          setTimeout(() => {
+            console.log(`🚀 Starting next question ${questionIndex + 2} for game ${gameId}`);
+            this.startQuestion(gameId, questionIndex + 1);
+          }, 2000);
+        }, 1000);
+      } else {
+        // No players answered, start next question directly
+        console.log(`⏭️  No players answered Q${questionIndex + 1}, starting next question directly. ${alivePlayersAfterTimeout.length} players alive`);
+        setTimeout(() => {
+          console.log(`🚀 Starting next question ${questionIndex + 2} for game ${gameId}`);
+          this.startQuestion(gameId, questionIndex + 1);
+        }, 2000);
+      }
 
     } catch (error) {
       console.error('❌ Error handling question timeout:', error);
@@ -823,7 +1162,35 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
     try {
       console.log(`🔓 Processing question results for game ${gameId}, question ${questionIndex + 1}`);
       
-      // Process the results directly
+      // Check if results already decided for this question
+      const resultDecidedKey = `result_decided:${gameId}:${questionIndex}`;
+      console.log(`🔑 [GAME_SERVICE] Checking result decided key: ${resultDecidedKey}`);
+      
+      const resultsAlreadyDecided = await queueService.redis?.get(resultDecidedKey);
+      console.log(`🔍 [GAME_SERVICE] Results already decided: ${resultsAlreadyDecided}`);
+      
+      if (resultsAlreadyDecided) {
+        console.log(`⚠️ [GAME_SERVICE] Results already decided for game ${gameId}, question ${questionIndex + 1}, skipping duplicate processing`);
+        console.log(`🔍 [GAME_SERVICE] This might be causing the game to get stuck!`);
+        // Check if this is a legitimate skip or if we need to force processing
+        const gameState = await this.getGameState(gameId);
+        console.log(`🔍 [GAME_SERVICE] Game state check - current question: ${gameState?.currentQuestion}, processing question: ${questionIndex}`);
+        if (gameState && gameState.currentQuestion === questionIndex) {
+          console.log(`🚨 [GAME_SERVICE] FORCING result processing - game is stuck on current question!`);
+          // Force processing by deleting the key and continuing
+          await queueService.redis?.del(resultDecidedKey);
+          console.log(`🗑️ [GAME_SERVICE] Deleted stale result_decided key: ${resultDecidedKey}`);
+        } else {
+          return;
+        }
+      }
+      
+      // Mark results as decided with 5-minute expiration
+      await queueService.redis?.setex(resultDecidedKey, 300, 'decided');
+      console.log(`✅ [GAME_SERVICE] Marked results as decided for game ${gameId}, question ${questionIndex + 1}`);
+      
+      // Process the results
+      console.log(`🚀 [GAME_SERVICE] Calling sendQuestionResults for Q${questionIndex + 1}`);
       await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
       
     } catch (error) {
@@ -841,6 +1208,17 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       }
 
       const { players, questions } = gameState;
+      
+      // Check if results have already been processed for this specific question
+      // Only check alive players for the current question to avoid false positives from previous questions
+      const alivePlayersForCheck = players.filter(p => p.status === 'alive');
+      const hasProcessedResults = alivePlayersForCheck.some(p => p.resultProcessed);
+      
+      if (hasProcessedResults) {
+        console.log(`🔄 Question ${questionIndex + 1} results already processed for alive players, skipping duplicate processing`);
+        console.log(`🔍 Alive players with resultProcessed: ${alivePlayersForCheck.filter(p => p.resultProcessed).map(p => p.user.nickname).join(', ')}`);
+        return;
+      }
       const question = questions[questionIndex];
       
       console.log(`📊 Processing results for Q${questionIndex + 1}: ${correctAnswer}`);
@@ -848,6 +1226,18 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       // Process each player's answer
       for (const player of players) {
         if (player.status !== 'alive') continue;
+        
+        // Skip if result already processed for this player
+        if (player.resultProcessed) {
+          console.log(`🔄 Skipping result processing for ${player.user.nickname} - already processed`);
+          continue;
+        }
+
+        // Only process players who have answers
+        if (!player.answer || player.answer.trim() === '') {
+          console.log(`⏳ Player ${player.user.nickname} has no answer, skipping result processing (will be handled by timeout)`);
+          continue;
+        }
 
         console.log(`🔍 Processing player ${player.user.nickname}: answer="${player.answer}", correctAnswer="${correctAnswer}"`);
         const isCorrect = player.answer && player.answer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
@@ -878,47 +1268,49 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
           console.log(`❌ Player ${player.user.nickname} eliminated on Q${questionIndex + 1} (wrong answer)`);
         }
 
-        // Send result message with deduplication
-        const resultDedupeKey = `result_sent:${gameId}:${questionIndex}:${player.user.whatsapp_number}`;
-        const resultAlreadySent = await queueService.redis?.get(resultDedupeKey);
+        // Mark result as processed ONLY for players who answered
+        player.resultProcessed = true;
+
+        // Send result message with consolidated deduplication
+        const resultMessage = isCorrect ? 
+          `✅ Correct Answer: ${correctAnswer}\n\n🎉 You're still in!` :
+          `❌ Correct Answer: ${correctAnswer}\n\n💀 You're out this game. Stick around to watch the finish!`;
         
-        if (!resultAlreadySent) {
-          await queueService.addMessage('send_message', {
-            to: player.user.whatsapp_number,
-            message: isCorrect ? 
-              `✅ Correct Answer: ${correctAnswer}\n\n🎉 You're still in!` :
-              `❌ Correct Answer: ${correctAnswer}\n\n💀 You're out this game. Stick around to watch the finish!`,
-            gameId: gameId,
-            messageType: 'elimination'
-          });
-          
-          // Mark as sent to prevent duplicates
-          await queueService.redis?.setex(resultDedupeKey, 60, 'sent');
-        } else {
-          console.log(`🔄 Skipping duplicate result message for ${player.user.nickname}`);
-        }
+        console.log(`📤 [GAME_SERVICE] Sending result message to ${player.user.nickname}:`);
+        console.log(`📤 [GAME_SERVICE] - Message: "${resultMessage}"`);
+        console.log(`📤 [GAME_SERVICE] - GameId: ${gameId}`);
+        console.log(`📤 [GAME_SERVICE] - QuestionIndex: ${questionIndex}`);
+        console.log(`📤 [GAME_SERVICE] - MessageType: elimination`);
+        
+        await queueService.addMessage('send_message', {
+          to: player.user.whatsapp_number,
+          message: resultMessage,
+          gameId: gameId,
+          messageType: 'elimination',
+          questionIndex: questionIndex // Add question index for better deduplication
+        });
       }
 
       // Save updated game state after processing all players
       await this.setGameState(gameId, gameState);
 
       // Check if game should end (all players eliminated or last question)
-      const alivePlayers = players.filter(p => p.status === 'alive');
+      const alivePlayersAfterProcessing = players.filter(p => p.status === 'alive');
       
-      if (alivePlayers.length === 0) {
+      if (alivePlayersAfterProcessing.length === 0) {
         console.log(`💀 All players eliminated on Q${questionIndex + 1}`);
         await this.endGame(gameId);
         return;
       }
 
       if (questionIndex + 1 >= questions.length) {
-        console.log(`🏁 Last question completed. ${alivePlayers.length} survivors!`);
+        console.log(`🏁 Last question completed. ${alivePlayersAfterProcessing.length} survivors!`);
         await this.endGame(gameId);
         return;
       }
 
       // Continue to next question
-      console.log(`⏭️  Continuing to next question. ${alivePlayers.length} players alive`);
+      console.log(`⏭️  Continuing to next question. ${alivePlayersAfterProcessing.length} players alive`);
       setTimeout(() => {
         console.log(`🚀 Starting next question ${questionIndex + 2} for game ${gameId}`);
         this.startQuestion(gameId, questionIndex + 1);
@@ -992,7 +1384,8 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         }
       }
 
-      // Clear deduplication keys
+      // Clear deduplication keys and cancel pending jobs
+      await queueService.cancelGameJobs(gameId);
       await queueService.clearGameDeduplication(gameId);
       
       // Remove from active games and Redis
@@ -1056,8 +1449,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
         console.log(`⏰ Cleared active timers set for game ${gameId}`);
       }
       
-      // Clear deduplication keys for this game
+      // Clear deduplication keys and cancel pending jobs for this game
       const queueService = require('./queueService');
+      await queueService.cancelGameJobs(gameId);
       await queueService.clearGameDeduplication(gameId);
       
       // Remove from Redis
@@ -1126,6 +1520,10 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
             const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
             if (player) {
               console.log(`✅ Found player in Redis game ${gameId}`);
+              console.log(`🔍 [GAME_SERVICE] Player found in game ${gameId}:`);
+              console.log(`🔍 [GAME_SERVICE] - Player status: ${player.status}`);
+              console.log(`🔍 [GAME_SERVICE] - Game current question: ${gameState.currentQuestion}`);
+              console.log(`🔍 [GAME_SERVICE] - Game status: ${gameState.status}`);
               return { gameId, gameState, player };
             }
           }
@@ -1147,6 +1545,10 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
       const player = gameState.players.find(p => p.user.whatsapp_number === phoneNumber);
       if (player) {
         console.log(`✅ Found player in in-memory game ${gameId}`);
+        console.log(`🔍 [GAME_SERVICE] Player found in in-memory game ${gameId}:`);
+        console.log(`🔍 [GAME_SERVICE] - Player status: ${player.status}`);
+        console.log(`🔍 [GAME_SERVICE] - Game current question: ${gameState.currentQuestion}`);
+        console.log(`🔍 [GAME_SERVICE] - Game status: ${gameState.status}`);
         return { gameId, gameState, player };
       }
     }
@@ -1207,20 +1609,15 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`
   cleanupAllTimers() {
     console.log('🧹 Cleaning up all game timers...');
     
-    for (const [gameId, gameState] of this.activeGames) {
-      if (gameState.questionTimer) {
-        clearInterval(gameState.questionTimer);
-        console.log(`⏰ Cleared timer for game ${gameId}`);
-      }
-      
-      if (gameState.activeTimers) {
-        if (gameState.activeTimers instanceof Set) {
-          gameState.activeTimers.clear();
-        } else if (typeof gameState.activeTimers === 'object') {
-          gameState.activeTimers = new Set();
+    if (this.activeTimers) {
+      this.activeTimers.forEach((timers, timerKey) => {
+        if (timers.questionTimer) clearTimeout(timers.questionTimer);
+        if (timers.countdownTimers) {
+          timers.countdownTimers.forEach(timer => clearTimeout(timer));
         }
-        console.log(`⏰ Cleared active timers for game ${gameId}`);
-      }
+        console.log(`✅ Cleared timers for ${timerKey}`);
+      });
+      this.activeTimers.clear();
     }
     
     console.log('✅ All timers cleaned up');

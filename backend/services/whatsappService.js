@@ -25,11 +25,11 @@ class WhatsAppService {
           return { message: 'logged_in_development' };
         }
         
-        // Only allow test phone numbers in development
-        if (!this.testPhoneNumbers.includes(to)) {
-          console.log(`🚫 [DEV MODE] Phone number ${to} not in test list. Message blocked.`);
-          return { message: 'blocked_not_test_number' };
-        }
+        // Only allow test phone numbers in development - DISABLED
+        // if (!this.testPhoneNumbers.includes(to)) {
+        //   console.log(`🚫 [DEV MODE] Phone number ${to} not in test list. Message blocked.`);
+        //   return { message: 'blocked_not_test_number' };
+        // }
       }
 
       const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
@@ -87,11 +87,11 @@ class WhatsAppService {
           return { message: 'logged_in_development' };
         }
         
-        // Only allow test phone numbers in development
-        if (!this.testPhoneNumbers.includes(to)) {
-          console.log(`🚫 [DEV MODE] Phone number ${to} not in test list. Interactive message blocked.`);
-          return { message: 'blocked_not_test_number' };
-        }
+        // Only allow test phone numbers in development - DISABLED
+        // if (!this.testPhoneNumbers.includes(to)) {
+        //   console.log(`🚫 [DEV MODE] Phone number ${to} not in test list. Interactive message blocked.`);
+        //   return { message: 'blocked_not_test_number' };
+        // }
       }
 
       console.log(`📤 Making WhatsApp API call to ${to} with body: "${body}"`);

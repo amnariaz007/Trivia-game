@@ -246,13 +246,17 @@ All winners have been contacted directly for payout.
 Reply "PLAY" for the next game!`;
       }
 
-      // Send announcement to all players
-      for (const player of allPlayers) {
-        await queueService.addMessage('send_message', {
-          to: player.user.whatsapp_number,
-          message: announcementMessage
-        });
-      }
+      // Send announcement to all players with deduplication and delay
+      setTimeout(async () => {
+        for (const player of allPlayers) {
+          await queueService.addMessage('send_message', {
+            to: player.user.whatsapp_number,
+            message: announcementMessage,
+            gameId: game.id,
+            messageType: 'game_end'
+          });
+        }
+      }, 2000); // 2 second delay to separate from elimination messages
 
       console.log('✅ Game end announcement sent to all players');
 

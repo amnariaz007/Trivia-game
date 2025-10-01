@@ -38,8 +38,8 @@ const User = sequelize.define('User', {
 }, {
   tableName: 'users',
   timestamps: true,
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
   indexes: [
     {
       unique: true,

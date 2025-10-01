@@ -55,8 +55,8 @@ const GamePlayer = sequelize.define('GamePlayer', {
 }, {
   tableName: 'game_players',
   timestamps: true,
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
   indexes: [
     {
       unique: true,

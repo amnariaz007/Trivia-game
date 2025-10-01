@@ -37,13 +37,13 @@ module.exports = {
   // Development-specific settings
   development: {
     // Disable WhatsApp messaging in development
-    disableWhatsAppMessaging: true,
+    disableWhatsAppMessaging: false,
     
     // Use test phone numbers only (from central config)
     testPhoneNumbers: testUsersConfig.getTestPhoneNumbers(),
     
     // Log all messages instead of sending
-    logMessagesOnly: true,
+    logMessagesOnly: false,
     
     // Frontend URL for development
     frontendUrl: 'http://localhost:3001'

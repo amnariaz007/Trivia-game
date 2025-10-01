@@ -35,6 +35,27 @@ const authenticateAdmin = (req, res, next) => {
 // Apply authentication to all admin routes
 router.use(authenticateAdmin);
 
+// Clear terminal for debugging
+router.post('/clear-terminal', (req, res) => {
+  try {
+    // Clear terminal using ANSI escape codes
+    process.stdout.write('\x1B[2J\x1B[0f');
+    console.log('🧹 Terminal manually cleared for debugging');
+    console.log('='.repeat(80));
+    console.log('🔧 MANUAL TERMINAL CLEAR - ADMIN ACTION');
+    console.log('='.repeat(80));
+    
+    res.json({ 
+      success: true, 
+      message: 'Terminal cleared successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error clearing terminal:', error);
+    res.status(500).json({ error: 'Failed to clear terminal' });
+  }
+});
+
 // Send test message
 router.post('/send-message', async (req, res) => {
   try {
@@ -133,14 +154,14 @@ router.get('/stats', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const users = await User.findAll({
-      attributes: ['id', 'nickname', 'whatsapp_number', 'is_active', 'createdAt', 'last_activity'],
-      order: [['createdAt', 'DESC']]
+      attributes: ['id', 'nickname', 'whatsapp_number', 'is_active', 'created_at', 'last_activity'],
+      order: [['created_at', 'DESC']]
     });
     
     // Format dates properly
     const formattedUsers = users.map(user => ({
       ...user.toJSON(),
-      createdAt: user.createdAt ? new Date(user.createdAt).toLocaleString() : 'N/A',
+      createdAt: user.created_at ? new Date(user.created_at).toLocaleString() : 'N/A',
       last_activity: user.last_activity ? new Date(user.last_activity).toLocaleString() : 'N/A'
     }));
     
@@ -310,7 +331,7 @@ router.get('/games', async (req, res) => {
           attributes: ['nickname', 'whatsapp_number']
         }]
       }],
-      order: [['createdAt', 'DESC']]
+      order: [['created_at', 'DESC']]
     });
     
     // Format dates properly and add winner information
@@ -327,7 +348,7 @@ router.get('/games', async (req, res) => {
       
       return {
         ...gameData,
-        createdAt: game.createdAt ? new Date(game.createdAt).toLocaleString() : 'N/A',
+        createdAt: game.created_at ? new Date(game.created_at).toLocaleString() : 'N/A',
         start_time: game.start_time ? new Date(game.start_time).toLocaleString() : 'N/A',
         end_time: game.end_time ? new Date(game.end_time).toLocaleString() : 'N/A',
         winners: winners

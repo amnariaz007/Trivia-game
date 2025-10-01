@@ -56,8 +56,8 @@ const PlayerAnswer = sequelize.define('PlayerAnswer', {
 }, {
   tableName: 'player_answers',
   timestamps: true,
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt',
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
   indexes: [
     {
       unique: true,

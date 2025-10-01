@@ -1,3 +1,6 @@
+// Optimize libuv thread pool BEFORE requiring any modules
+process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || 16;
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -16,9 +19,12 @@ require('./models'); // Initialize models
 const queueService = require('./services/queueService');
 const gameService = require('./services/gameService');
 const PerformanceMonitor = require('./services/performanceMonitor');
+const workerManager = require('./services/workerManager');
 
 // Initialize services
-console.log('🔄 Initializing queue service...');
+console.log('🔄 Initializing services...');
+console.log(`🧵 libuv thread pool size: ${process.env.UV_THREADPOOL_SIZE}`);
+console.log(`💻 CPU cores available: ${require('os').cpus().length}`);
 const performanceMonitor = new PerformanceMonitor();
 
 // Import routes
@@ -175,6 +181,41 @@ async function initializeApp() {
     
   } catch (error) {
     console.error('❌ Application initialization failed:', error);
+    process.exit(1);
+  }
+}
+
+// Graceful shutdown handling
+process.on('SIGTERM', async () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully...');
+  await gracefulShutdown();
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 SIGINT received, shutting down gracefully...');
+  await gracefulShutdown();
+});
+
+async function gracefulShutdown() {
+  try {
+    console.log('🧹 Cleaning up resources...');
+    
+    // Cleanup worker threads
+    workerManager.cleanup();
+    
+    // Cleanup game service
+    gameService.cleanupAllTimers();
+    
+    // Cleanup queue service
+    await queueService.cleanup();
+    
+    // Close database connection
+    await sequelize.close();
+    
+    console.log('✅ Graceful shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during graceful shutdown:', error);
     process.exit(1);
   }
 }

@@ -11,6 +11,7 @@ class QueueService {
     this.messageQueue = null;
     this.gameQueue = null;
     this.messageBatcher = new MessageBatcher();
+    this.activeJobs = new Map(); // Track active jobs by gameId
 
     // Initialize Redis connection
     this.initializeRedis();
@@ -297,6 +298,12 @@ class QueueService {
         ...options
       });
       console.log(`📤 Added message job ${job.id} to queue`);
+      
+      // Track job if it's game-related
+      if (data.gameId) {
+        this.trackJob(data.gameId, job.id, type);
+      }
+      
       return job;
     } catch (error) {
       console.error('❌ Failed to add message to queue:', error.message);
@@ -356,32 +363,48 @@ class QueueService {
   }
 
   async processMessage(data) {
-    const { to, message, gameId, messageType } = data;
+    const { to, message, gameId, messageType, questionIndex } = data;
     
-    // Create deduplication key for critical game messages (but be less aggressive)
-    if (gameId && messageType && ['game_start', 'elimination', 'emergency_end'].includes(messageType)) {
-      const dedupeKey = `message_sent:${gameId}:${messageType}:${to}`;
+    console.log(`📤 [QUEUE_SERVICE] Processing message:`);
+    console.log(`📤 [QUEUE_SERVICE] - To: ${to}`);
+    console.log(`📤 [QUEUE_SERVICE] - Message: "${message}"`);
+    console.log(`📤 [QUEUE_SERVICE] - GameId: ${gameId}`);
+    console.log(`📤 [QUEUE_SERVICE] - MessageType: ${messageType}`);
+    console.log(`📤 [QUEUE_SERVICE] - QuestionIndex: ${questionIndex}`);
+    
+    // Create deduplication key for critical game messages
+    if (gameId && messageType && ['game_start', 'elimination', 'late_elimination', 'timeout_elimination', 'game_end', 'emergency_end'].includes(messageType)) {
+      // Include question index for elimination messages to prevent cross-question duplicates
+      const dedupeKey = questionIndex !== undefined ? 
+        `message_sent:${gameId}:${messageType}:${questionIndex}:${to}` :
+        `message_sent:${gameId}:${messageType}:${to}`;
+      
+      console.log(`🔑 [QUEUE_SERVICE] Deduplication key: ${dedupeKey}`);
       
       if (this.redis) {
         try {
           const alreadySent = await this.redis.get(dedupeKey);
           if (alreadySent) {
-            console.log(`🔄 Skipping duplicate ${messageType} message to ${to} (already sent)`);
+            console.log(`🔄 [QUEUE_SERVICE] Skipping duplicate ${messageType} message to ${to} (already sent)`);
             return { message: 'duplicate_skipped' };
           }
           
-          // Mark as sent with 30 second expiration (shorter for better responsiveness)
-          await this.redis.setex(dedupeKey, 30, 'sent');
-          console.log(`✅ ${messageType} message marked as sent to ${to}`);
+          // Mark as sent with 60 second expiration for elimination messages
+          const expiration = messageType === 'elimination' ? 60 : 30;
+          await this.redis.setex(dedupeKey, expiration, 'sent');
+          console.log(`✅ [QUEUE_SERVICE] ${messageType} message marked as sent to ${to}`);
         } catch (error) {
-          console.error('❌ Redis message deduplication error:', error);
+          console.error('❌ [QUEUE_SERVICE] Redis message deduplication error:', error);
           // Continue with sending if Redis fails
         }
       }
     }
     
+    console.log(`📤 [QUEUE_SERVICE] Sending message to WhatsApp API...`);
     const whatsappService = require('./whatsappService');
-    return await whatsappService.sendTextMessage(to, message);
+    const result = await whatsappService.sendTextMessage(to, message);
+    console.log(`📤 [QUEUE_SERVICE] WhatsApp API result:`, result);
+    return result;
   }
 
   async processTemplate(data) {
@@ -561,6 +584,67 @@ class QueueService {
     }
   }
 
+  // Track job for a specific game
+  trackJob(gameId, jobId, jobType) {
+    if (!this.activeJobs.has(gameId)) {
+      this.activeJobs.set(gameId, []);
+    }
+    this.activeJobs.get(gameId).push({ jobId, jobType });
+    console.log(`📝 [QUEUE] Tracking ${jobType} job ${jobId} for game ${gameId} (total tracked: ${this.activeJobs.get(gameId).length})`);
+  }
+
+  // Cancel all jobs for a specific game
+  async cancelGameJobs(gameId) {
+    if (!this.messageQueue || !this.gameQueue) {
+      console.log(`⚠️ [QUEUE] Queues not available for job cancellation: gameId=${gameId}`);
+      return;
+    }
+    
+    try {
+      const jobs = this.activeJobs.get(gameId) || [];
+      console.log(`🧹 [QUEUE] Cancelling ${jobs.length} jobs for game ${gameId}`);
+      
+      let cancelledCount = 0;
+      let notFoundCount = 0;
+      let errorCount = 0;
+      
+      for (const { jobId, jobType } of jobs) {
+        try {
+          if (jobType.includes('message') || jobType.includes('question') || jobType.includes('elimination')) {
+            const job = await this.messageQueue.getJob(jobId);
+            if (job) {
+              await job.remove();
+              cancelledCount++;
+              console.log(`✅ [QUEUE] Cancelled message job ${jobId} (${jobType}) for game ${gameId}`);
+            } else {
+              notFoundCount++;
+              console.log(`⚠️ [QUEUE] Message job ${jobId} not found for game ${gameId}`);
+            }
+          } else if (jobType.includes('timer') || jobType.includes('game')) {
+            const job = await this.gameQueue.getJob(jobId);
+            if (job) {
+              await job.remove();
+              cancelledCount++;
+              console.log(`✅ [QUEUE] Cancelled game job ${jobId} (${jobType}) for game ${gameId}`);
+            } else {
+              notFoundCount++;
+              console.log(`⚠️ [QUEUE] Game job ${jobId} not found for game ${gameId}`);
+            }
+          }
+        } catch (error) {
+          errorCount++;
+          console.error(`❌ [QUEUE] Error cancelling job ${jobId} (${jobType}):`, error.message);
+        }
+      }
+      
+      // Clear tracked jobs
+      this.activeJobs.delete(gameId);
+      console.log(`✅ [QUEUE] Job cancellation summary for game ${gameId}: ${cancelledCount} cancelled, ${notFoundCount} not found, ${errorCount} errors`);
+    } catch (error) {
+      console.error('❌ [QUEUE] Error cancelling game jobs:', error);
+    }
+  }
+
   // Clear deduplication keys for a game (call when game ends)
   async clearGameDeduplication(gameId) {
     if (!this.redis) return;
@@ -571,8 +655,10 @@ class QueueService {
       // Get all keys matching the game pattern
       const questionKeys = await this.redis.keys(`question_sent:${gameId}:*`);
       const messageKeys = await this.redis.keys(`message_sent:${gameId}:*`);
+      const reminderKeys = await this.redis.keys(`reminder_sent:${gameId}:*`);
+      const resultKeys = await this.redis.keys(`result_decided:${gameId}:*`);
       
-      const allKeys = [...questionKeys, ...messageKeys];
+      const allKeys = [...questionKeys, ...messageKeys, ...reminderKeys, ...resultKeys];
       
       if (allKeys.length > 0) {
         await this.redis.del(...allKeys);
