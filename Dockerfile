@@ -18,6 +18,9 @@ COPY . .
 # Build the application
 RUN npm run build
 
+# Set working directory to backend for the start command
+WORKDIR /app/backend
+
 # Expose port
 EXPOSE 3000
 
