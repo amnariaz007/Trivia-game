@@ -7,6 +7,10 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+// Set log level for production to reduce log volume
+const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'INFO' : 'DEBUG');
+const isProduction = process.env.NODE_ENV === 'production';
+
 const app = express();
 const PORT = process.env.PORT || 3002;
 

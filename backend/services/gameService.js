@@ -1,5 +1,6 @@
 const { Game, User, Question, GamePlayer, PlayerAnswer } = require('../models');
 const queueService = require('./queueService');
+const logger = require('../utils/logger');
 const rewardService = require('./rewardService');
 const whatsappService = require('./whatsappService');
 const CircuitBreaker = require('./circuitBreaker');
@@ -747,17 +748,10 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         }
 
         // Answer already set above, just verify
-        console.log(`✅ Player ${player.user.nickname} answer confirmed: "${player.answer}"`);
-        console.log(`🔍 Answer processing for ${player.user.nickname} - time since question start: ${Date.now() - questionStartTime.getTime()}ms`);
-        
         const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
-      
-        console.log(`🔍 Answer comparison:`);
-        console.log(`🔍 Player answer: "${answer}"`);
-        console.log(`🔍 Correct answer: "${currentQuestion.correct_answer}"`);
-        console.log(`🔍 Normalized player answer: "${answer.toLowerCase().trim()}"`);
-        console.log(`🔍 Normalized correct answer: "${currentQuestion.correct_answer.toLowerCase().trim()}"`);
-        console.log(`🔍 Is correct: ${isCorrect}`);
+        
+        // Only log essential answer processing info
+        logger.info(`✅ ${player.user.nickname}: "${answer}" -> ${isCorrect ? 'CORRECT' : 'WRONG'}`);
 
         // Save to database - first ensure game exists in database
         let gameExists = await Game.findByPk(gameId);

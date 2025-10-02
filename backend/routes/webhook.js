@@ -4,6 +4,7 @@ const Joi = require('joi');
 
 const whatsappService = require('../services/whatsappService');
 const queueService = require('../services/queueService');
+const logger = require('../utils/logger');
 const { User, Game, GamePlayer } = require('../models');
 
 // Normalize phone number to E.164 format
@@ -42,9 +43,15 @@ router.get('/', (req, res) => {
 // Message webhook
 router.post('/', async (req, res) => {
   try {
-    console.log('📥 Received webhook at:', new Date().toISOString());
-    console.log('📥 Webhook body:', JSON.stringify(req.body, null, 2));
-    console.log('📥 Webhook headers:', JSON.stringify(req.headers, null, 2));
+    logger.info('📥 Received webhook at:', new Date().toISOString());
+    // Only log essential webhook info to reduce log volume
+    if (req.body.entry && req.body.entry[0] && req.body.entry[0].changes) {
+      const change = req.body.entry[0].changes[0];
+      if (change.value.messages) {
+        const message = change.value.messages[0];
+        logger.info('📥 Message from:', message.from, 'Text:', message.text?.body || 'interactive');
+      }
+    }
     
     // Log webhook to monitoring system
     try {
@@ -191,19 +198,14 @@ router.post('/', async (req, res) => {
 // Process individual message
 async function processMessage(message, contact) {
   try {
-    console.log('🔍 Processing message:', JSON.stringify(message, null, 2));
-    console.log('🔍 Contact info:', JSON.stringify(contact, null, 2));
-    
     // Use wa_id from contact info (E.164 format) and normalize it
     const phoneNumber = normalizePhoneNumber(contact?.wa_id || message.from);
     const messageText = message.text?.body || '';
     const buttonResponse = message.interactive?.button_reply?.title || '';
     const finalMessage = messageText || buttonResponse;
 
-    console.log(`📱 Processing message from ${phoneNumber}:`);
-    console.log(`📱 Text: "${messageText}"`);
-    console.log(`📱 Button: "${buttonResponse}"`);
-    console.log(`📱 Final: "${finalMessage}"`);
+    // Only log essential message processing info
+    logger.info(`📱 Processing: ${phoneNumber} -> "${finalMessage}"`);
 
     // Get or create user
     let user = await User.findByWhatsAppNumber(phoneNumber);

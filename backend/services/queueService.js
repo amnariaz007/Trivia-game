@@ -1,6 +1,7 @@
 const Queue = require('bull');
 const Redis = require('ioredis');
 const MessageBatcher = require('./messageBatcher');
+const logger = require('../utils/logger');
 
 console.log('🔧 Initializing Queue Service...');
 
@@ -250,7 +251,8 @@ class QueueService {
   }
 
   async addMessage(type, data, options = {}) {
-    console.log(`📤 Adding message to queue: ${type}`, { to: data.to, messageLength: data.message?.length, gameId: data.gameId });
+    // Only log essential message info to reduce log volume
+    logger.info(`📤 Queue: ${type} to ${data.to} (${data.message?.length || 0} chars)`);
     
     if (!this.messageQueue) {
       console.log('⚠️  Message queue not available, skipping message');
