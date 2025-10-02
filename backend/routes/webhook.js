@@ -43,15 +43,7 @@ router.get('/', (req, res) => {
 // Message webhook
 router.post('/', async (req, res) => {
   try {
-    logger.info('📥 Received webhook at:', new Date().toISOString());
-    // Only log essential webhook info to reduce log volume
-    if (req.body.entry && req.body.entry[0] && req.body.entry[0].changes) {
-      const change = req.body.entry[0].changes[0];
-      if (change.value.messages) {
-        const message = change.value.messages[0];
-        logger.info('📥 Message from:', message.from, 'Text:', message.text?.body || 'interactive');
-      }
-    }
+    // Silent webhook processing - only log errors
     
     // Log webhook to monitoring system
     try {
@@ -169,17 +161,13 @@ router.post('/', async (req, res) => {
           
           // Handle messages
           if (value.messages && Array.isArray(value.messages)) {
-            console.log('📨 Processing messages:', value.messages.length);
             for (const message of value.messages) {
-              console.log('📨 Message type:', message.type);
-              console.log('📨 Message content:', JSON.stringify(message, null, 2));
               await processMessage(message, value.contacts?.[0]);
             }
           }
           
-          // Handle status updates (message read/delivered status)
+          // Handle status updates (message read/delivered status) - silent processing
           if (value.statuses && Array.isArray(value.statuses)) {
-            console.log('📊 Message status update received:', value.statuses);
             for (const status of value.statuses) {
               await handleMessageStatus(status);
             }
@@ -204,8 +192,7 @@ async function processMessage(message, contact) {
     const buttonResponse = message.interactive?.button_reply?.title || '';
     const finalMessage = messageText || buttonResponse;
 
-    // Only log essential message processing info
-    logger.info(`📱 Processing: ${phoneNumber} -> "${finalMessage}"`);
+    // Silent message processing - only log errors
 
     // Get or create user
     let user = await User.findByWhatsAppNumber(phoneNumber);
@@ -645,26 +632,23 @@ async function handleGameAnswer(user, answer) {
 // Handle message status updates
 async function handleMessageStatus(status) {
   try {
-    console.log(`📊 Processing message status: ${status.status} for ${status.recipient_id}`);
-    
+    // Only log failed messages, ignore sent/delivered/read
     if (status.status === 'failed' && status.errors) {
       for (const error of status.errors) {
-        console.log(`❌ Message failed with error:`, error);
+        logger.error(`❌ Message failed: ${status.recipient_id} - ${error.message}`);
         
         // Handle 24-hour window restriction (error code 131047)
         if (error.code === 131047) {
-          console.log(`⏰ 24-hour window expired for ${status.recipient_id}`);
           await handle24HourWindowExpired(status.recipient_id);
         }
         // Handle other message failures
         else {
-          console.log(`❌ Message failed for ${status.recipient_id}: ${error.message}`);
           await handleMessageFailure(status.recipient_id, error);
         }
       }
     }
   } catch (error) {
-    console.error('❌ Error handling message status:', error);
+    logger.error('❌ Error handling message status:', error);
   }
 }
 

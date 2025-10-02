@@ -251,8 +251,7 @@ class QueueService {
   }
 
   async addMessage(type, data, options = {}) {
-    // Only log essential message info to reduce log volume
-    logger.info(`📤 Queue: ${type} to ${data.to} (${data.message?.length || 0} chars)`);
+    // Silent queue operations - only log errors
     
     if (!this.messageQueue) {
       console.log('⚠️  Message queue not available, skipping message');
@@ -282,11 +281,9 @@ class QueueService {
       
       // For normal messages, use batching
       try {
-        console.log('📦 Using message batcher for send_message');
         return await this.addBatchedMessage(data.to, data.message, data.priority || 'normal');
       } catch (error) {
-        console.error('❌ Failed to add batched message:', error.message);
-        console.error('❌ Batcher error details:', error);
+        logger.error('❌ Failed to add batched message:', error.message);
         return null;
       }
     }

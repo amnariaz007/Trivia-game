@@ -1,6 +1,7 @@
 const { whatsappConfig } = require('../config/whatsapp');
 const { User } = require('../models');
 const devConfig = require('../config/development');
+const logger = require('../utils/logger');
 
 class WhatsAppService {
   constructor() {
@@ -39,7 +40,8 @@ class WhatsAppService {
         text: { body: text }
       });
       
-      console.log('✅ Text message sent:', response.data);
+      // Only log message ID for successful sends
+      logger.info(`✅ Message sent: ${response.data.messages?.[0]?.id || 'unknown'}`);
       return response.data;
     } catch (error) {
       console.error('❌ Error sending text message:', error.response?.data || error.message);

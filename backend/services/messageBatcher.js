@@ -92,7 +92,7 @@ class MessageBatcher {
     // Take messages for this batch
     const batchMessages = this.pendingMessages.splice(0, this.batchSize);
     
-    console.log(`📦 Processing batch of ${batchMessages.length} messages`);
+    // Silent batch processing - only log errors
 
     try {
       // Group messages by recipient for efficiency
@@ -175,13 +175,10 @@ class MessageBatcher {
    */
   async sendSingleMessage(to, message) {
     try {
-      console.log(`📤 Sending message to ${to}: ${message.substring(0, 50)}...`);
-      
       // Import WhatsApp service and send the message
       const whatsappService = require('./whatsappService');
       const result = await whatsappService.sendTextMessage(to, message);
       
-      console.log(`✅ Message sent successfully to ${to}`);
       return result;
     } catch (error) {
       console.error(`❌ Failed to send message to ${to}:`, error.message);
