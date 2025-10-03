@@ -460,12 +460,6 @@ class GameService {
       await this.sendCountdownReminder(gameId, questionIndex, 5);
     }, 5000);
 
-    // Schedule 2-second reminder  
-    const reminder2s = setTimeout(async () => {
-      console.log(`⏰ 2s reminder firing at ${new Date().toISOString()}`);
-      await this.sendCountdownReminder(gameId, questionIndex, 2);
-    }, 8000);
-
     // Main timeout (after grace period)
     const mainTimer = setTimeout(async () => {
       console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout`);
@@ -474,7 +468,7 @@ class GameService {
 
     // Store timer IDs instead of timer objects (to avoid circular structure)
     gameState.questionTimerId = mainTimer[Symbol.toPrimitive] ? mainTimer[Symbol.toPrimitive]() : mainTimer.toString();
-    gameState.countdownTimerIds = [reminder5s, reminder2s].map(timer => 
+    gameState.countdownTimerIds = [reminder5s].map(timer => 
       timer[Symbol.toPrimitive] ? timer[Symbol.toPrimitive]() : timer.toString()
     );
     
@@ -482,7 +476,7 @@ class GameService {
     if (!this.activeTimers) this.activeTimers = new Map();
     this.activeTimers.set(`${gameId}:${questionIndex}`, {
       questionTimer: mainTimer,
-      countdownTimers: [reminder5s, reminder2s]
+      countdownTimers: [reminder5s]
     });
     
     // Save updated game state (without timer objects)
