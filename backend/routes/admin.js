@@ -367,7 +367,7 @@ router.post('/games', async (req, res) => {
   try {
     const { startTime, prizePool, totalQuestions } = req.body;
     
-    if (!startTime || !prizePool) {
+    if (!startTime || prizePool === undefined || prizePool === null) {
       return res.status(400).json({ error: 'Start time and prize pool are required' });
     }
     
