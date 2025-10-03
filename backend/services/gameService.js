@@ -1484,7 +1484,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       for (const player of gameState.players) {
         await queueService.addMessage('send_message', {
           to: player.user.whatsapp_number,
-          message: `🎮 QRush Trivia is starting!\n\nGet ready for sudden-death questions!\n\nFirst question in 5 seconds...`
+          message: `🎮 QRush Trivia is starting!\n\nGet ready for sudden-death questions!\n\nFirst question in 30 seconds...`
         });
       }
 

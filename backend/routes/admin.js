@@ -371,13 +371,8 @@ router.post('/games', async (req, res) => {
       return res.status(400).json({ error: 'Start time and prize pool are required' });
     }
     
-    // Validate start time - must be in the future
+    // Parse start time
     const gameStartTime = new Date(startTime);
-    const now = new Date();
-    
-    if (gameStartTime <= now) {
-      return res.status(400).json({ error: 'Start time must be in the future' });
-    }
     
     const game = await Game.create({
       start_time: gameStartTime,

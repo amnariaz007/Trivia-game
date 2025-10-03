@@ -322,7 +322,7 @@ Reply "PLAY" for the next game!`;
    * @returns {boolean} Is valid
    */
   validatePrizePool(amount) {
-    return amount > 0 && amount <= 10000; // Max $10,000 prize pool
+    return amount >= 0 && amount <= 10000; // Allow $0 prize pool, max $10,000 prize pool
   }
 }
 

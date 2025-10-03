@@ -10,7 +10,7 @@ interface CreateGameFormProps {
 export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
   const [formData, setFormData] = useState({
     startTime: '',
-    prizePool: 100,
+    prizePool: 0,
     totalQuestions: 10
   });
   const [loading, setLoading] = useState(false);
@@ -35,22 +35,14 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
     setGameId(null);
 
     try {
-      // Validate start time
-      const selectedTime = new Date(formData.startTime);
-      const now = new Date();
-      
-      if (selectedTime <= now) {
-        setMessage('Error: Start time must be in the future. Please select a future date and time.');
-        setLoading(false);
-        return;
-      }
+      // Create game with selected start time
 
       const result = await apiService.createGame(formData);
       setGameId(result.id);
       setMessage('Game created successfully!');
       setFormData({
         startTime: '',
-        prizePool: 100,
+        prizePool: 0,
         totalQuestions: 10
       });
       onGameCreated(result.id);
@@ -75,7 +67,6 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
               id="startTime"
               value={formData.startTime}
               onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-              min={new Date().toISOString().slice(0, 16)}
               required
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             />
@@ -88,7 +79,7 @@ export default function CreateGameForm({ onGameCreated }: CreateGameFormProps) {
             <input
               type="number"
               id="prizePool"
-              min="1"
+              min="0"
               step="0.01"
               value={formData.prizePool}
               onChange={(e) => setFormData({ ...formData, prizePool: parseFloat(e.target.value) })}

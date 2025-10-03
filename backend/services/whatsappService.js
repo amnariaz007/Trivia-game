@@ -145,7 +145,7 @@ class WhatsAppService {
       // Randomize the order of the 3 options
       const randomizedOptions = threeOptions.sort(() => Math.random() - 0.5);
 
-      const body = `Q${questionNumber}: ${questionText}`;
+      const body = `Q${questionNumber}: ${questionText}\n\n⏰ 10 seconds left to answer`;
       console.log(`📤 Sending interactive message to ${to}:`, body);
       console.log(`📤 Buttons:`, randomizedOptions);
       

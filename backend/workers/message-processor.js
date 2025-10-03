@@ -134,7 +134,7 @@ function formatCountdownMessage(message) {
  */
 function formatGameStartMessage(message) {
   const { prizePool, questionTimer } = message;
-  return `🎮 QRush Trivia is starting!\n\nGet ready for sudden-death questions!\n\nFirst question in 5 seconds...`;
+  return `🎮 QRush Trivia is starting!\n\nGet ready for sudden-death questions!\n\nFirst question in 30 seconds...`;
 }
 
 /**
