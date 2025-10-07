@@ -239,8 +239,6 @@ async function handleNewUser(phoneNumber, messageText, contact) {
         message: `🎉 Welcome to QRush Trivia, ${displayName}!
 
 It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
-
-💰 Today's prize pool: $${prizePool}
 ⏰ Next game: ${nextGameTime}
 
 Reply "PLAY" to get a reminder when we start!`
