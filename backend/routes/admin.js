@@ -802,10 +802,10 @@ router.get('/games/:id/export', async (req, res) => {
       ]
     });
 
-    // Generate comprehensive CSV content
+    // Generate simplified CSV content
     let csv = '';
     
-    // Game Summary Section
+    // Game Summary Section (simplified)
     csv += 'GAME SUMMARY\n';
     csv += `Game ID,${game.id}\n`;
     csv += `Status,${game.status}\n`;
@@ -816,21 +816,6 @@ router.get('/games/:id/export', async (req, res) => {
     csv += `Total Questions,${game.questions.length}\n`;
     csv += `Winner Count,${game.winner_count || 0}\n`;
     csv += `Prize Per Winner,${game.winner_count > 0 ? `$${(game.prize_pool / game.winner_count).toFixed(2)}` : 'N/A'}\n`;
-    csv += '\n';
-    
-    // Question Details Section
-    csv += 'QUESTION DETAILS\n';
-    csv += 'Question Number,Question Text,Correct Answer,Total Responses,Correct Responses,Wrong Responses,No Responses\n';
-    
-    game.questions.forEach(question => {
-      const questionAnswers = playerAnswers.filter(pa => pa.question_id === question.id);
-      const correctResponses = questionAnswers.filter(pa => pa.is_correct).length;
-      const wrongResponses = questionAnswers.filter(pa => !pa.is_correct).length;
-      const noResponses = game.players.length - questionAnswers.length;
-      
-      csv += '"' + question.question_order + '","' + question.question_text.replace(/"/g, '""') + '","' + question.correct_answer + '","' + questionAnswers.length + '","' + correctResponses + '","' + wrongResponses + '","' + noResponses + '"\n';
-    });
-    
     csv += '\n';
     
     // Player Summary Section (Enhanced)
@@ -888,68 +873,6 @@ router.get('/games/:id/export', async (req, res) => {
     playersWithAnswers.forEach(player => {
       csv += '"' + player.nickname + '","' + player.whatsapp + '","' + player.status + '","' + player.eliminationQuestion + '","' + player.position + '"\n';
     });
-    
-    csv += '\n';
-    
-    // Detailed Answers Section (Enhanced)
-    csv += 'DETAILED ANSWERS\n';
-    csv += 'Nickname,Question Number,Question Text,Player Answer,Correct Answer,Is Correct,Response Time,Answer Timestamp\n';
-    
-    playerAnswers.forEach(answer => {
-      const responseTime = answer.response_time_ms ? 
-        answer.response_time_ms + 'ms' : 'N/A';
-      const answerTimestamp = answer.createdAt ? answer.createdAt.toISOString() : 'N/A';
-      
-      csv += '"' + answer.user.nickname + '","' + answer.question_number + '","' + answer.question.question_text.replace(/"/g, '""') + '","' + answer.selected_answer + '","' + answer.question.correct_answer + '","' + (answer.is_correct ? 'Yes' : 'No') + '","' + responseTime + '","' + answerTimestamp + '"\n';
-    });
-    
-    csv += '\n';
-    
-    // Question-by-Question Analysis Section
-    csv += 'QUESTION-BY-QUESTION ANALYSIS\n';
-    csv += 'Question Number,Question Text,Players Answered,Players Correct,Players Wrong,Players No Answer,Success Rate\n';
-    
-    game.questions.forEach(question => {
-      const questionAnswers = playerAnswers.filter(pa => pa.question_id === question.id);
-      const correctCount = questionAnswers.filter(pa => pa.is_correct).length;
-      const wrongCount = questionAnswers.filter(pa => !pa.is_correct).length;
-      const noAnswerCount = game.players.length - questionAnswers.length;
-      const successRate = questionAnswers.length > 0 ? ((correctCount / questionAnswers.length) * 100).toFixed(1) + '%' : '0%';
-      
-      csv += '"' + question.question_order + '","' + question.question_text.replace(/"/g, '""') + '","' + questionAnswers.length + '","' + correctCount + '","' + wrongCount + '","' + noAnswerCount + '","' + successRate + '"\n';
-    });
-    
-    csv += '\n';
-    
-    // Elimination Timeline Section
-    csv += 'ELIMINATION TIMELINE\n';
-    csv += 'Question Number,Question Text,Players Eliminated,Players Remaining,Elimination Rate\n';
-    
-    let playersRemaining = game.players.length;
-    game.questions.forEach((question, index) => {
-      const questionAnswers = playerAnswers.filter(pa => pa.question_id === question.id);
-      const eliminatedThisQuestion = questionAnswers.filter(pa => !pa.is_correct).length;
-      const eliminationRate = playersRemaining > 0 ? ((eliminatedThisQuestion / playersRemaining) * 100).toFixed(1) + '%' : '0%';
-      
-      csv += '"' + question.question_order + '","' + question.question_text.replace(/"/g, '""') + '","' + eliminatedThisQuestion + '","' + playersRemaining + '","' + eliminationRate + '"\n';
-      
-      playersRemaining -= eliminatedThisQuestion;
-    });
-    
-    csv += '\n';
-    
-    // Winners Section (if game is finished)
-    if (game.status === 'finished' && game.winner_count > 0) {
-      csv += 'WINNERS\n';
-      csv += 'Nickname,WhatsApp Number,Prize Amount\n';
-      
-      const winners = game.players.filter(p => p.status === 'winner');
-      const prizePerWinner = (game.prize_pool / game.winner_count).toFixed(2);
-      
-      winners.forEach(winner => {
-        csv += `"${winner.user.nickname}","${winner.user.whatsapp_number}","$${prizePerWinner}"\n`;
-      });
-    }
     
     // Set headers for CSV download
     res.setHeader('Content-Type', 'text/csv');

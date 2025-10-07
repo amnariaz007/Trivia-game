@@ -660,11 +660,11 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         throw new Error('Game not found or not active');
       }
 
-      // Check if the question is still active (exactly 10 seconds)
+      // Check if the question is still active (10 seconds + 500ms buffer for network delays)
       const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
       const questionDuration = 10000; // 10 seconds question duration
-      const maxAnswerTime = questionDuration; // No grace period - exactly 10 seconds
+      const maxAnswerTime = questionDuration + 500; // Add 500ms buffer for network delays
       
       // Debug timing information
       console.log(`⏰ [TIMING] Question start: ${questionStartTime.toISOString()}`);
