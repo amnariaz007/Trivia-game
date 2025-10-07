@@ -85,6 +85,8 @@ class RewardService {
       // Get game details
       const game = await Game.findByPk(gameId);
       if (!game) {
+        console.error(`❌ Game not found in database: ${gameId}`);
+        console.error(`❌ Available games in database:`, await Game.findAll({ attributes: ['id', 'status'] }));
         throw new Error('Game not found');
       }
 

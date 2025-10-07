@@ -234,12 +234,22 @@ class GameService {
       );
 
       // Initialize game state with proper structure
+      const sortedQuestions = game.questions
+        .sort((a, b) => a.question_order - b.question_order) // Ensure proper ordering
+        .map(question => question.toJSON()); // Convert to plain objects
+      
+      // Debug: Log the questions to verify correct order
+      console.log(`🔍 Questions loaded for game ${gameId}:`);
+      sortedQuestions.forEach((q, index) => {
+        console.log(`  Q${index + 1}: "${q.question_text}" -> Answer: "${q.correct_answer}"`);
+      });
+      
       const gameState = {
         id: gameId,
         gameId,
         status: 'in_progress',
         currentQuestion: 0,
-        questions: game.questions,
+        questions: sortedQuestions,
         players: activePlayers.map(player => ({
           ...player.toJSON(),
           status: 'alive',
@@ -345,6 +355,12 @@ class GameService {
 
       const question = questions[questionIndex];
       gameState.currentQuestion = questionIndex;
+      
+      // Debug: Log the question being sent
+      console.log(`🎯 Sending Question ${questionIndex + 1}:`);
+      console.log(`  Text: "${question.question_text}"`);
+      console.log(`  Correct Answer: "${question.correct_answer}"`);
+      console.log(`  Options: ${question.option_a}, ${question.option_b}, ${question.option_c}, ${question.option_d}`);
       
       // Reset player answer states for new question
       for (const player of players) {
@@ -1478,6 +1494,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       console.log(`🧹 Game state cleaned up for: ${gameId}`);
 
       // Process rewards using reward service
+      console.log(`🏆 About to process rewards for game: ${gameId}`);
       const gameResults = await rewardService.processGameRewards(gameId);
       
       console.log(`🏆 Game ${gameId} ended successfully:`, {
