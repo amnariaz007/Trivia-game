@@ -1022,7 +1022,16 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         console.log(`🔍 Checking player ${player.user.nickname}: status=${player.status}, answer="${player.answer}"`);
         
         // Only eliminate if player is alive AND has NO answer (timeout)
+        // Skip if player was already eliminated by late answer handler
         if (player.status === 'alive' && (!player.answer || player.answer.trim() === '')) {
+          // Double-check player is still alive (prevent race condition with late answer handler)
+          const freshGameState = await this.getGameState(gameId);
+          const freshPlayer = freshGameState?.players?.find(p => p.user.whatsapp_number === player.user.whatsapp_number);
+          
+          if (!freshPlayer || freshPlayer.status !== 'alive') {
+            console.log(`🔄 Player ${player.user.nickname} was already eliminated by another process, skipping timeout elimination`);
+            continue;
+          }
           // Eliminate player for not answering
           player.status = 'eliminated';
           player.eliminatedAt = new Date();
