@@ -195,7 +195,11 @@ class GameService {
       }
       const game = await Game.findByPk(gameId, {
         include: [
-          { model: Question, as: 'questions' },
+          { 
+            model: Question, 
+            as: 'questions',
+            order: [['question_order', 'ASC']]
+          },
           { model: GamePlayer, as: 'players', include: [{ model: User, as: 'user' }] }
         ]
       });
