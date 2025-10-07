@@ -282,7 +282,6 @@ async function handleExistingUser(user, messageText, buttonResponse, wa_id) {
 
 It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
 
-💰 Today's prize pool: $${prizePool}
 ⏰ Next game: ${nextGameTime} EST
 
 Reply "PLAY" to get a reminder when we start!`
@@ -316,7 +315,7 @@ Reply "PLAY" to get a reminder when we start!`
 
 It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
 
-💰 Today's prize pool: $${prizePool}
+
 ⏰ Next game: ${nextGameTime}
 
 Reply "PLAY" to get a reminder when we start!`
@@ -380,7 +379,7 @@ async function handleNicknameRegistration(user, nickname) {
 
 It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
 
-💰 Today's prize pool: $${prizePool}
+
 ⏰ Next game: ${nextGameTime}
 
 Reply "PLAY" to get a reminder when we start!`
@@ -410,7 +409,6 @@ async function handlePlayCommand(user, wa_id) {
         message: `📱 There's no game running right now.
 
 ⏰ Next QRush Trivia: ${nextGameTime} EST
-💰 Prize pool: $${prizePool}
 
 Reply "PLAY" for a reminder.`
       });

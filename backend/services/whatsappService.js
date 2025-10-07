@@ -141,8 +141,6 @@ class WhatsAppService {
     const message = `🎉 Welcome to QRush Trivia!
 
 It's sudden-death: get every question right to stay in. One wrong or no answer = you're out.
-
-💰 Today's prize pool: $${prizePool}
 ⏰ Next game: ${nextGameTime}
 
 Reply "PLAY" to get a reminder when we start!`;
@@ -191,7 +189,7 @@ Tap "JOIN" to get the start ping!`;
 
   // Send no game running message
   async sendNoGameMessage(to, nextGameTime, prizePool) {
-    const message = `📱 There's no game running right now.\n\n⏰ Next QRush Trivia: ${nextGameTime}\n💰 Prize pool: $${prizePool}\n\nReply "PLAY" for a reminder.`;
+    const message = `📱 There's no game running right now.\n\n⏰ Next QRush Trivia: ${nextGameTime}\n\nReply "PLAY" for a reminder.`;
 
     return await this.sendInteractiveMessage(to, message, ['PLAY']);
   }
@@ -214,7 +212,6 @@ Tap "JOIN" to get the start ping!`;
 • Winners are DM'd directly.
 
 ⏰ Next game: ${nextGameTime}
-💰 Prize: $${prizePool}
 
 Reply "PLAY" for a reminder.`;
 
