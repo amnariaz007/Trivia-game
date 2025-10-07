@@ -879,7 +879,68 @@ router.get('/games/:id/export', async (req, res) => {
   }
 });
 
-
+// Delete all games endpoint
+router.delete('/games/delete-all', async (req, res) => {
+  try {
+    console.log('🗑️  Starting bulk deletion of all games...');
+    
+    // Get all games first to count them
+    const games = await Game.findAll();
+    console.log(`📊 Found ${games.length} games to delete`);
+    
+    if (games.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No games found to delete',
+        deletedCount: 0,
+        errorCount: 0,
+        totalGames: 0
+      });
+    }
+    
+    let deletedCount = 0;
+    let errorCount = 0;
+    
+    // Delete each game and its related data
+    for (const game of games) {
+      try {
+        console.log(`🗑️  Deleting game ${game.id.substring(0, 8)}... (${game.status})`);
+        
+        // Delete related records first (foreign key constraints)
+        await GamePlayer.destroy({ where: { game_id: game.id } });
+        await PlayerAnswer.destroy({ where: { game_id: game.id } });
+        await Question.destroy({ where: { game_id: game.id } });
+        
+        // Delete the game itself
+        await game.destroy();
+        deletedCount++;
+        
+        console.log(`✅ Successfully deleted game ${game.id.substring(0, 8)}...`);
+        
+      } catch (error) {
+        errorCount++;
+        console.error(`❌ Failed to delete game ${game.id.substring(0, 8)}:`, error.message);
+      }
+    }
+    
+    console.log(`📊 Bulk deletion complete: ${deletedCount} deleted, ${errorCount} errors`);
+    
+    res.json({
+      success: true,
+      message: 'Bulk game deletion completed',
+      deletedCount,
+      errorCount,
+      totalGames: games.length
+    });
+    
+  } catch (error) {
+    console.error('❌ Error in bulk game deletion:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
 
 module.exports = router;
 

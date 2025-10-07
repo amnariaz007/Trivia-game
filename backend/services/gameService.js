@@ -1545,51 +1545,8 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
     return null;
   }
 
-  // Check if player is in active game
-  async isPlayerInActiveGame(phoneNumber) {
-    const activeGame = await this.getActiveGameForPlayer(phoneNumber);
-    return activeGame !== null;
-  }
 
-  // Get player status in active game
-  async getPlayerGameStatus(phoneNumber) {
-    const activeGame = await this.getActiveGameForPlayer(phoneNumber);
-    if (!activeGame) return null;
-    
-    return {
-      gameId: activeGame.gameId,
-      status: activeGame.player.status,
-      currentQuestion: activeGame.gameState.currentQuestion + 1,
-      totalQuestions: activeGame.gameState.questions.length
-    };
-  }
 
-  // Get game statistics
-  async getGameStats(gameId) {
-    try {
-      const game = await Game.findByPk(gameId, {
-        include: [
-          { model: GamePlayer, as: 'players' },
-          { model: PlayerAnswer, as: 'answers' }
-        ]
-      });
-
-      if (!game) return null;
-
-      return {
-        totalPlayers: game.players.length,
-        winnerCount: game.winner_count,
-        prizePool: game.prize_pool,
-        startTime: game.start_time,
-        endTime: game.end_time,
-        duration: game.end_time ? (game.end_time - game.start_time) / 1000 : null
-      };
-
-    } catch (error) {
-      console.error('❌ Error getting game stats:', error);
-      return null;
-    }
-  }
 
   // Note: Expired game notification logic removed - using frontend validation instead
 
@@ -1611,44 +1568,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
     console.log('✅ All timers cleaned up');
   }
 
-  /**
-   * Acquire a Redis lock to prevent race conditions
-   * @param {string} lockKey - Lock key
-   * @param {number} ttl - Time to live in seconds
-   * @returns {Promise<boolean>} Whether lock was acquired
-   */
-  async acquireLock(lockKey, ttl = 30) {
-    if (!this.redisGameState.isAvailable()) {
-      return true; // No Redis, allow operation
-    }
 
-    try {
-      const result = await this.redisGameState.redis.set(lockKey, 'locked', 'EX', ttl, 'NX');
-      return result === 'OK';
-    } catch (error) {
-      console.error('❌ Error acquiring lock:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Release a Redis lock
-   * @param {string} lockKey - Lock key
-   * @returns {Promise<boolean>} Whether lock was released
-   */
-  async releaseLock(lockKey) {
-    if (!this.redisGameState.isAvailable()) {
-      return true; // No Redis, allow operation
-    }
-
-    try {
-      await this.redisGameState.redis.del(lockKey);
-      return true;
-    } catch (error) {
-      console.error('❌ Error releasing lock:', error);
-      return false;
-    }
-  }
 }
 
 module.exports = new GameService();

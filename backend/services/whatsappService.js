@@ -49,28 +49,6 @@ class WhatsAppService {
     }
   }
 
-  // Send template message
-  async sendTemplateMessage(to, templateName, language = 'en_US') {
-    try {
-      const response = await this.client.post(`/${this.phoneNumberId}/messages`, {
-        messaging_product: 'whatsapp',
-        to: to,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: {
-            code: language
-          }
-        }
-      });
-      
-      console.log('✅ Template message sent:', response.data);
-      return response.data;
-    } catch (error) {
-      console.error('❌ Error sending template message:', error.response?.data || error.message);
-      throw error;
-    }
-  }
 
   // Send interactive message with buttons
   async sendInteractiveMessage(to, body, buttons) {
@@ -184,12 +162,6 @@ Tap "JOIN" to get the start ping!`;
     return await this.sendInteractiveMessage(to, message, ['JOIN']);
   }
 
-  // Send question with timer - simplified to just show question
-  async sendQuestionWithTimer(to, questionText, options, questionNumber, timeLeft) {
-    const body = `Q${questionNumber}: ${questionText}`;
-    
-    return await this.sendInteractiveMessage(to, body, options);
-  }
 
   // Send elimination message
   async sendEliminationMessage(to, correctAnswer, isCorrect) {
@@ -273,45 +245,12 @@ Reply "PLAY" for a reminder.`;
   // Generate timer bar visualization
   // Timer bar function removed - no more timer notifications
 
-  // Extract phone number from WhatsApp message
-  extractPhoneNumber(message) {
-    return message?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id;
-  }
 
-  // Extract message text from WhatsApp webhook
-  extractMessageText(message) {
-    const textMessage = message?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body;
-    const buttonMessage = message?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.title;
-    
-    return textMessage || buttonMessage || '';
-  }
 
-  // Extract button response from WhatsApp webhook
-  extractButtonResponse(message) {
-    return message?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive?.button_reply?.title;
-  }
 
   // Timer update function removed - no more timer notifications in chat
 
-  // Send game start message
-  async sendGameStartMessage(to, gameInfo) {
-    const message = `🎮 QRush Trivia starts now!\n\n💰 Prize pool: $${gameInfo.prizePool}\n⏰ ${gameInfo.questionTimer}s per question\n\nGet ready for sudden-death elimination!`;
-    return await this.sendTextMessage(to, message);
-  }
 
-  // Send game end message
-  async sendGameEndMessage(to, gameResult) {
-    let message;
-    if (gameResult.winnerCount === 0) {
-      message = '💀 Game over - no survivors!\n\nThanks for playing QRush Trivia!';
-    } else if (gameResult.winnerCount === 1) {
-      message = `🏆 Game over - we have a winner!\n\nWinner will be contacted directly for prize delivery.\nThanks for playing QRush Trivia!`;
-    } else {
-      message = `🏆 Game over!\n\nMultiple winners this time - nice!\nWinners: ${gameResult.winnerCount}\nPrize pool: $${gameResult.prizePool}\nEach winner receives: $${gameResult.individualPrize}\n\nWinners will be DM'd directly for payout.`;
-    }
-    
-    return await this.sendTextMessage(to, message);
-  }
 
   // Verify webhook
   verifyWebhook(mode, token, challenge) {
