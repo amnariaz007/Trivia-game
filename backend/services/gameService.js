@@ -12,11 +12,10 @@ class GameService {
     this.redisGameState = new RedisGameState(); // Redis game state (primary)
     this.circuitBreaker = new CircuitBreaker();
     this.activeTimers = new Map(); // Store timer objects in memory (not in Redis)
-    this.ANSWER_GRACE_MS = parseInt(process.env.ANSWER_GRACE_MS) || 3000; // Default 3 seconds
     console.log('✅ Circuit Breaker initialized for GameService');
     console.log('✅ Redis Game State initialized for GameService');
     console.log('✅ Active Timers Map initialized for GameService');
-    console.log(`✅ Answer grace period set to ${this.ANSWER_GRACE_MS}ms`);
+    console.log('✅ No grace period - strict 10 second timer');
   }
 
   /**
@@ -460,11 +459,11 @@ class GameService {
       await this.sendCountdownReminder(gameId, questionIndex, 5);
     }, 5000);
 
-    // Main timeout (after grace period)
+    // Main timeout (exactly 10 seconds)
     const mainTimer = setTimeout(async () => {
       console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout`);
       await this.handleQuestionTimeout(gameId, questionIndex);
-    }, 10000 + this.ANSWER_GRACE_MS); // 10s + 3s grace = 13s total
+    }, 10000); // Exactly 10 seconds
 
     // Store timer IDs instead of timer objects (to avoid circular structure)
     gameState.questionTimerId = mainTimer[Symbol.toPrimitive] ? mainTimer[Symbol.toPrimitive]() : mainTimer.toString();
@@ -498,7 +497,9 @@ class GameService {
         return;
       }
 
-      const alivePlayers = gameState.players.filter(p => p.status === 'alive');
+      // Get fresh game state to ensure we have latest player statuses
+      const freshGameState = await this.getGameState(gameId);
+      const alivePlayers = freshGameState.players.filter(p => p.status === 'alive');
       const playersNeedingReminder = alivePlayers.filter(p => !p.answer || p.answer.trim() === '');
 
       console.log(`⏰ [COUNTDOWN] Game ${gameId} Q${questionIndex + 1}: Sending ${secondsLeft}s reminder to ${playersNeedingReminder.length}/${alivePlayers.length} players`);
@@ -506,8 +507,17 @@ class GameService {
 
       let remindersSent = 0;
       let duplicatesSkipped = 0;
+      let eliminatedSkipped = 0;
 
       for (const player of playersNeedingReminder) {
+        // Double-check player is still alive before sending (prevent race conditions)
+        const currentPlayer = freshGameState.players.find(p => p.user.whatsapp_number === player.user.whatsapp_number);
+        if (!currentPlayer || currentPlayer.status !== 'alive') {
+          eliminatedSkipped++;
+          console.log(`⏰ [COUNTDOWN] Skipped ${secondsLeft}s reminder for ${player.user.nickname} - player eliminated`);
+          continue;
+        }
+
         // Check if reminder already sent to prevent duplicates
         const reminderKey = `reminder_sent:${gameId}:${questionIndex}:${secondsLeft}:${player.user.whatsapp_number}`;
         const alreadySent = await queueService.redis?.get(reminderKey);
@@ -515,7 +525,7 @@ class GameService {
         if (!alreadySent) {
           await queueService.addMessage('send_message', {
             to: player.user.whatsapp_number,
-            message: `⏰ ${secondsLeft} seconds left to answer!`,
+            message: `• ${secondsLeft} seconds left to answer`,
             gameId: gameId,
             messageType: 'countdown_reminder'
           });
@@ -530,7 +540,7 @@ class GameService {
         }
       }
 
-      console.log(`⏰ [COUNTDOWN] Summary: ${remindersSent} sent, ${duplicatesSkipped} duplicates skipped for ${secondsLeft}s reminder`);
+      console.log(`⏰ [COUNTDOWN] Summary: ${remindersSent} sent, ${duplicatesSkipped} duplicates skipped, ${eliminatedSkipped} eliminated skipped for ${secondsLeft}s reminder`);
     } catch (error) {
       console.error(`❌ Error sending ${secondsLeft}s countdown reminder for game ${gameId} Q${questionIndex + 1}:`, error);
     }
@@ -630,11 +640,11 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         throw new Error('Game not found or not active');
       }
 
-      // Check if the question is still active (within question duration + configurable grace period)
+      // Check if the question is still active (exactly 10 seconds)
       const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
       const questionDuration = 10000; // 10 seconds question duration
-      const maxAnswerTime = questionDuration + this.ANSWER_GRACE_MS;
+      const maxAnswerTime = questionDuration; // No grace period - exactly 10 seconds
       
       if (timeSinceQuestionStart > maxAnswerTime) {
         console.log(`⏰ Answer too late for ${phoneNumber} - ${timeSinceQuestionStart}ms since question start (max: ${maxAnswerTime}ms)`);
@@ -1147,42 +1157,48 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
 
   // Process question results with Redis lock to prevent race conditions
   async processQuestionResultsWithLock(gameId, questionIndex, correctAnswer) {
+    const lockKey = `result_processing:${gameId}:${questionIndex}`;
+    
     try {
       console.log(`🔓 Processing question results for game ${gameId}, question ${questionIndex + 1}`);
       
-      // Check if results already decided for this question
-      const resultDecidedKey = `result_decided:${gameId}:${questionIndex}`;
-      console.log(`🔑 [GAME_SERVICE] Checking result decided key: ${resultDecidedKey}`);
-      
-      const resultsAlreadyDecided = await queueService.redis?.get(resultDecidedKey);
-      console.log(`🔍 [GAME_SERVICE] Results already decided: ${resultsAlreadyDecided}`);
-      
-      if (resultsAlreadyDecided) {
-        console.log(`⚠️ [GAME_SERVICE] Results already decided for game ${gameId}, question ${questionIndex + 1}, skipping duplicate processing`);
-        console.log(`🔍 [GAME_SERVICE] This might be causing the game to get stuck!`);
-        // Check if this is a legitimate skip or if we need to force processing
-        const gameState = await this.getGameState(gameId);
-        console.log(`🔍 [GAME_SERVICE] Game state check - current question: ${gameState?.currentQuestion}, processing question: ${questionIndex}`);
-        if (gameState && gameState.currentQuestion === questionIndex) {
-          console.log(`🚨 [GAME_SERVICE] FORCING result processing - game is stuck on current question!`);
-          // Force processing by deleting the key and continuing
-          await queueService.redis?.del(resultDecidedKey);
-          console.log(`🗑️ [GAME_SERVICE] Deleted stale result_decided key: ${resultDecidedKey}`);
-        } else {
-          return;
-        }
+      // Use Redis lock to prevent concurrent processing
+      const lockAcquired = await this.acquireRedisLock(lockKey, 30);
+      if (!lockAcquired) {
+        console.log(`⚠️ [GAME_SERVICE] Could not acquire lock for result processing, another process is handling it`);
+        return;
       }
       
-      // Mark results as decided with 5-minute expiration
-      await queueService.redis?.setex(resultDecidedKey, 300, 'decided');
-      console.log(`✅ [GAME_SERVICE] Marked results as decided for game ${gameId}, question ${questionIndex + 1}`);
-      
-      // Process the results
-      console.log(`🚀 [GAME_SERVICE] Calling sendQuestionResults for Q${questionIndex + 1}`);
-      await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
+      try {
+        // Check if results already decided for this question
+        const resultDecidedKey = `result_decided:${gameId}:${questionIndex}`;
+        console.log(`🔑 [GAME_SERVICE] Checking result decided key: ${resultDecidedKey}`);
+        
+        const resultsAlreadyDecided = await queueService.redis?.get(resultDecidedKey);
+        console.log(`🔍 [GAME_SERVICE] Results already decided: ${resultsAlreadyDecided}`);
+        
+        if (resultsAlreadyDecided) {
+          console.log(`⚠️ [GAME_SERVICE] Results already decided for game ${gameId}, question ${questionIndex + 1}, skipping duplicate processing`);
+          return;
+        }
+        
+        // Mark results as decided with 5-minute expiration
+        await queueService.redis?.setex(resultDecidedKey, 300, 'decided');
+        console.log(`✅ [GAME_SERVICE] Marked results as decided for game ${gameId}, question ${questionIndex + 1}`);
+        
+        // Process the results
+        console.log(`🚀 [GAME_SERVICE] Calling sendQuestionResults for Q${questionIndex + 1}`);
+        await this.sendQuestionResults(gameId, questionIndex, correctAnswer);
+        
+      } finally {
+        // Always release the lock
+        await this.releaseRedisLock(lockKey);
+      }
       
     } catch (error) {
       console.error('❌ Error in processQuestionResultsWithLock:', error);
+      // Ensure lock is released even on error
+      await this.releaseRedisLock(lockKey);
     }
   }
 
@@ -1228,8 +1244,13 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         }
 
         console.log(`🔍 Processing player ${player.user.nickname}: answer="${player.answer}", correctAnswer="${correctAnswer}"`);
-        const isCorrect = player.answer && player.answer.toLowerCase().trim() === correctAnswer.toLowerCase().trim();
-        console.log(`🔍 Player ${player.user.nickname} isCorrect: ${isCorrect}`);
+        
+        // Improved answer comparison with better normalization
+        const normalizedPlayerAnswer = player.answer ? player.answer.toLowerCase().trim().replace(/[^\w\s]/g, '') : '';
+        const normalizedCorrectAnswer = correctAnswer ? correctAnswer.toLowerCase().trim().replace(/[^\w\s]/g, '') : '';
+        const isCorrect = normalizedPlayerAnswer === normalizedCorrectAnswer;
+        
+        console.log(`🔍 Player ${player.user.nickname} answer comparison: "${normalizedPlayerAnswer}" === "${normalizedCorrectAnswer}" = ${isCorrect}`);
         
         if (!isCorrect) {
           // Eliminate player
@@ -1566,6 +1587,35 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
     }
     
     console.log('✅ All timers cleaned up');
+  }
+
+  // Redis lock helper methods
+  async acquireRedisLock(lockKey, ttl = 30) {
+    if (!this.redisGameState.isAvailable()) {
+      return true; // No Redis, allow operation
+    }
+
+    try {
+      const result = await this.redisGameState.redis.set(lockKey, 'locked', 'EX', ttl, 'NX');
+      return result === 'OK';
+    } catch (error) {
+      console.error('❌ Error acquiring Redis lock:', error);
+      return false;
+    }
+  }
+
+  async releaseRedisLock(lockKey) {
+    if (!this.redisGameState.isAvailable()) {
+      return true; // No Redis, allow operation
+    }
+
+    try {
+      await this.redisGameState.redis.del(lockKey);
+      return true;
+    } catch (error) {
+      console.error('❌ Error releasing Redis lock:', error);
+      return false;
+    }
   }
 
 

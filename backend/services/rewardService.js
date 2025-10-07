@@ -88,7 +88,7 @@ class RewardService {
         throw new Error('Game not found');
       }
 
-      // Get all surviving players
+      // Get all surviving players (with detailed logging)
       const survivors = await GamePlayer.findAll({
         where: {
           game_id: gameId,
@@ -103,6 +103,7 @@ class RewardService {
 
       const winnerCount = survivors.length;
       console.log(`🎯 Found ${winnerCount} survivors in game ${gameId}`);
+      console.log(`🎯 Survivors:`, survivors.map(s => `${s.user.nickname} (${s.user.whatsapp_number})`));
 
       // Calculate prize distribution
       const prizeDistribution = this.calculatePrizeDistribution(
@@ -117,14 +118,21 @@ class RewardService {
         end_time: new Date()
       });
 
-      // Update player statuses
-      await GamePlayer.update(
+      // Update player statuses to 'winner' BEFORE sending notifications
+      const updateResult = await GamePlayer.update(
         { status: 'winner' },
         { where: { game_id: gameId, status: 'alive' } }
       );
+      console.log(`✅ Updated ${updateResult[0]} players to winner status`);
 
-      // Send winner notifications
-      await this.notifyWinners(game, survivors, prizeDistribution);
+      // Verify survivors are still valid after status update
+      if (survivors.length === 0) {
+        console.log(`⚠️ No survivors found - skipping winner notifications`);
+      } else {
+        // Send winner notifications
+        console.log(`📱 Sending winner notifications to ${survivors.length} players...`);
+        await this.notifyWinners(game, survivors, prizeDistribution);
+      }
 
       // Send game end announcement
       await this.announceGameEnd(game, prizeDistribution);
@@ -157,9 +165,23 @@ class RewardService {
     try {
       console.log(`📱 Notifying ${survivors.length} winners...`);
 
+      if (survivors.length === 0) {
+        console.log(`⚠️ No survivors to notify`);
+        return;
+      }
+
+      let notificationsSent = 0;
+      let notificationsFailed = 0;
+
       for (let i = 0; i < survivors.length; i++) {
         const survivor = survivors[i];
         const distribution = prizeDistribution.distribution[i];
+        
+        if (!survivor.user || !survivor.user.whatsapp_number) {
+          console.log(`❌ Invalid survivor data for index ${i}:`, survivor);
+          notificationsFailed++;
+          continue;
+        }
         
         let message = '';
         
@@ -181,14 +203,24 @@ You'll receive your payout within 24 hours. Thanks for playing!`;
 You'll receive your payout within 24 hours. Thanks for playing!`;
         }
 
-        // Send winner notification
-        await queueService.addMessage('send_message', {
-          to: survivor.user.whatsapp_number,
-          message: message
-        });
+        try {
+          // Send winner notification
+          await queueService.addMessage('send_message', {
+            to: survivor.user.whatsapp_number,
+            message: message,
+            gameId: game.id,
+            messageType: 'winner_notification'
+          });
 
-        console.log(`✅ Winner notification sent to ${survivor.user.nickname}`);
+          console.log(`✅ Winner notification sent to ${survivor.user.nickname} (${survivor.user.whatsapp_number})`);
+          notificationsSent++;
+        } catch (notificationError) {
+          console.error(`❌ Failed to send winner notification to ${survivor.user.nickname}:`, notificationError);
+          notificationsFailed++;
+        }
       }
+
+      console.log(`📊 Winner notification summary: ${notificationsSent} sent, ${notificationsFailed} failed`);
 
     } catch (error) {
       console.error('❌ Error notifying winners:', error);

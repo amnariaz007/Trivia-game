@@ -818,39 +818,122 @@ router.get('/games/:id/export', async (req, res) => {
     csv += `Prize Per Winner,${game.winner_count > 0 ? `$${(game.prize_pool / game.winner_count).toFixed(2)}` : 'N/A'}\n`;
     csv += '\n';
     
-    // Player Summary Section
+    // Question Details Section
+    csv += 'QUESTION DETAILS\n';
+    csv += 'Question Number,Question Text,Correct Answer,Total Responses,Correct Responses,Wrong Responses,No Responses\n';
+    
+    game.questions.forEach(question => {
+      const questionAnswers = playerAnswers.filter(pa => pa.question_id === question.id);
+      const correctResponses = questionAnswers.filter(pa => pa.is_correct).length;
+      const wrongResponses = questionAnswers.filter(pa => !pa.is_correct).length;
+      const noResponses = game.players.length - questionAnswers.length;
+      
+      csv += '"' + question.question_order + '","' + question.question_text.replace(/"/g, '""') + '","' + question.correct_answer + '","' + questionAnswers.length + '","' + correctResponses + '","' + wrongResponses + '","' + noResponses + '"\n';
+    });
+    
+    csv += '\n';
+    
+    // Player Summary Section (Enhanced)
     csv += 'PLAYER SUMMARY\n';
-    csv += 'Nickname,WhatsApp Number,Status,Elimination Round,Final Position\n';
+    csv += 'Nickname,WhatsApp Number,Status,Elimination Question,Final Position\n';
     
     const playersWithAnswers = game.players.map(player => {
       const playerAnswersForGame = playerAnswers.filter(pa => pa.user_id === player.user_id);
-      const lastCorrectAnswer = playerAnswersForGame.filter(pa => pa.is_correct).pop();
-      const eliminationRound = lastCorrectAnswer ? lastCorrectAnswer.question.question_order + 1 : 1;
+      const correctAnswers = playerAnswersForGame.filter(pa => pa.is_correct);
+      const wrongAnswers = playerAnswersForGame.filter(pa => !pa.is_correct);
+      
+      // Find elimination details
+      let eliminationQuestion = 'N/A';
+      let eliminationQuestionText = 'N/A';
+      let eliminationReason = 'N/A';
+      
+      if (player.status === 'eliminated') {
+        // Use the eliminated_by_question field from the database if available
+        if (player.eliminated_by_question) {
+          eliminationQuestion = player.eliminated_by_question;
+          const question = game.questions.find(q => q.question_order === player.eliminated_by_question);
+          if (question) {
+            eliminationQuestionText = question.question_text;
+          }
+          eliminationReason = 'Eliminated';
+        } else {
+          // Fallback: Find the first wrong answer
+          const firstWrongAnswer = wrongAnswers[0];
+          if (firstWrongAnswer) {
+            eliminationQuestion = firstWrongAnswer.question_number;
+            eliminationQuestionText = firstWrongAnswer.question.question_text;
+            eliminationReason = 'Wrong Answer';
+          } else {
+            // Player was eliminated due to timeout (no answer)
+            const lastQuestion = game.questions[game.questions.length - 1];
+            eliminationQuestion = lastQuestion.question_order;
+            eliminationQuestionText = lastQuestion.question_text;
+            eliminationReason = 'No Answer/Timeout';
+          }
+        }
+      }
       
       return {
         nickname: player.user.nickname,
         whatsapp: player.user.whatsapp_number,
         status: player.status,
-        eliminationRound: player.status === 'eliminated' ? eliminationRound : game.questions.length,
-        position: player.status === 'winner' ? 'Winner' : `Eliminated Round ${eliminationRound}`
+        eliminationQuestion: eliminationQuestion,
+        eliminationQuestionText: eliminationQuestionText,
+        eliminationReason: eliminationReason,
+        position: player.status === 'winner' ? 'Winner' : 'Eliminated Q' + eliminationQuestion,
+        totalCorrect: correctAnswers.length
       };
     });
     
     playersWithAnswers.forEach(player => {
-      csv += `"${player.nickname}","${player.whatsapp}","${player.status}","${player.eliminationRound}","${player.position}"\n`;
+      csv += '"' + player.nickname + '","' + player.whatsapp + '","' + player.status + '","' + player.eliminationQuestion + '","' + player.position + '"\n';
     });
     
     csv += '\n';
     
-    // Detailed Answers Section
+    // Detailed Answers Section (Enhanced)
     csv += 'DETAILED ANSWERS\n';
-    csv += 'Nickname,Question Number,Question Text,Player Answer,Correct Answer,Is Correct,Response Time\n';
+    csv += 'Nickname,Question Number,Question Text,Player Answer,Correct Answer,Is Correct,Response Time,Answer Timestamp\n';
     
     playerAnswers.forEach(answer => {
       const responseTime = answer.response_time_ms ? 
-        `${answer.response_time_ms}ms` : 'N/A';
+        answer.response_time_ms + 'ms' : 'N/A';
+      const answerTimestamp = answer.createdAt ? answer.createdAt.toISOString() : 'N/A';
       
-      csv += `"${answer.user.nickname}","${answer.question_number}","${answer.question.question_text}","${answer.selected_answer}","${answer.question.correct_answer}","${answer.is_correct ? 'Yes' : 'No'}","${responseTime}"\n`;
+      csv += '"' + answer.user.nickname + '","' + answer.question_number + '","' + answer.question.question_text.replace(/"/g, '""') + '","' + answer.selected_answer + '","' + answer.question.correct_answer + '","' + (answer.is_correct ? 'Yes' : 'No') + '","' + responseTime + '","' + answerTimestamp + '"\n';
+    });
+    
+    csv += '\n';
+    
+    // Question-by-Question Analysis Section
+    csv += 'QUESTION-BY-QUESTION ANALYSIS\n';
+    csv += 'Question Number,Question Text,Players Answered,Players Correct,Players Wrong,Players No Answer,Success Rate\n';
+    
+    game.questions.forEach(question => {
+      const questionAnswers = playerAnswers.filter(pa => pa.question_id === question.id);
+      const correctCount = questionAnswers.filter(pa => pa.is_correct).length;
+      const wrongCount = questionAnswers.filter(pa => !pa.is_correct).length;
+      const noAnswerCount = game.players.length - questionAnswers.length;
+      const successRate = questionAnswers.length > 0 ? ((correctCount / questionAnswers.length) * 100).toFixed(1) + '%' : '0%';
+      
+      csv += '"' + question.question_order + '","' + question.question_text.replace(/"/g, '""') + '","' + questionAnswers.length + '","' + correctCount + '","' + wrongCount + '","' + noAnswerCount + '","' + successRate + '"\n';
+    });
+    
+    csv += '\n';
+    
+    // Elimination Timeline Section
+    csv += 'ELIMINATION TIMELINE\n';
+    csv += 'Question Number,Question Text,Players Eliminated,Players Remaining,Elimination Rate\n';
+    
+    let playersRemaining = game.players.length;
+    game.questions.forEach((question, index) => {
+      const questionAnswers = playerAnswers.filter(pa => pa.question_id === question.id);
+      const eliminatedThisQuestion = questionAnswers.filter(pa => !pa.is_correct).length;
+      const eliminationRate = playersRemaining > 0 ? ((eliminatedThisQuestion / playersRemaining) * 100).toFixed(1) + '%' : '0%';
+      
+      csv += '"' + question.question_order + '","' + question.question_text.replace(/"/g, '""') + '","' + eliminatedThisQuestion + '","' + playersRemaining + '","' + eliminationRate + '"\n';
+      
+      playersRemaining -= eliminatedThisQuestion;
     });
     
     csv += '\n';
