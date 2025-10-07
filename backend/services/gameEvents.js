@@ -48,14 +48,14 @@ class GameEventManager extends EventEmitter {
         // Start the game using existing gameService
         await gameService.startGame(gameId);
         
-        // Emit next question event after 2 seconds
+        // Emit next question event after 30 seconds
         setTimeout(() => {
           this.emit('nextQuestion', { 
             gameId, 
             questionIndex: 0, 
             players: game.players 
           });
-        }, 2000);
+        }, 30000);
 
       } catch (error) {
         console.error('❌ Error in gameStart event:', error);

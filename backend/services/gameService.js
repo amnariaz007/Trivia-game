@@ -257,11 +257,11 @@ class GameService {
       // Send game start message to all players
       await this.sendGameStartMessage(gameId);
 
-      // Start first question after 2 seconds
+      // Start first question after 30 seconds
       setTimeout(() => {
-        console.log(`🚀 Starting first question for game ${gameId} after 2 second delay`);
+        console.log(`🚀 Starting first question for game ${gameId} after 30 second delay`);
         this.startQuestion(gameId, 0);
-      }, 2000);
+      }, 30000);
 
       console.log(`🎮 Game ${gameId} started with ${gameState.players.length} players`);
       
