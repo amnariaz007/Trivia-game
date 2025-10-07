@@ -1590,7 +1590,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
   }
 
   // Redis lock helper methods
-  async acquireRedisLock(lockKey, ttl = 30) {
+  async acquireLock(lockKey, ttl = 30) {
     if (!this.redisGameState.isAvailable()) {
       return true; // No Redis, allow operation
     }
@@ -1604,7 +1604,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
     }
   }
 
-  async releaseRedisLock(lockKey) {
+  async releaseLock(lockKey) {
     if (!this.redisGameState.isAvailable()) {
       return true; // No Redis, allow operation
     }
@@ -1616,6 +1616,14 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       console.error('❌ Error releasing Redis lock:', error);
       return false;
     }
+  }
+
+  async acquireRedisLock(lockKey, ttl = 30) {
+    return this.acquireLock(lockKey, ttl);
+  }
+
+  async releaseRedisLock(lockKey) {
+    return this.releaseLock(lockKey);
   }
 
 
