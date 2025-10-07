@@ -252,6 +252,22 @@ Reply "PLAY" for a reminder.`;
 
 
 
+  // Send template message (for future use with approved templates)
+  async sendTemplateMessage(to, templateName, parameters = {}) {
+    try {
+      console.log(`📤 Sending template message to ${to}: ${templateName}`);
+      
+      // For now, just send a text message since we don't have approved templates
+      // In the future, this would use the WhatsApp Business API template message endpoint
+      const message = `📱 Template: ${templateName}\n\nThis is a placeholder for template messages.`;
+      return await this.sendTextMessage(to, message);
+      
+    } catch (error) {
+      console.error('❌ Error sending template message:', error);
+      throw error;
+    }
+  }
+
   // Verify webhook
   verifyWebhook(mode, token, challenge) {
     if (mode === 'subscribe' && token === whatsappConfig.verifyToken) {
