@@ -381,17 +381,7 @@ class GameService {
       game.current_question = questionIndex;
       await game.save();
 
-      // Set question start time FIRST (before any delays)
-      gameState.questionStartTime = new Date();
-      console.log(`⏰ Question ${questionIndex + 1} start time set: ${gameState.questionStartTime.toISOString()}`);
-      
-      // Save updated game state to Redis
-      await this.setGameState(gameId, gameState);
-
-      // Start countdown timer IMMEDIATELY (don't wait for question sending)
-      await this.startQuestionTimer(gameId, questionIndex, 10);
-
-      // Send question to all alive players (non-blocking)
+      // Send question to all alive players FIRST
       console.log(`📤 Sending question ${questionIndex + 1} to ${players.filter(p => p.status === 'alive').length} alive players`);
       
       // Send questions asynchronously (don't await)
@@ -438,6 +428,16 @@ class GameService {
       
       // Don't wait for question sending to complete
       console.log(`📤 Question sending started for ${sendPromises.length} players (non-blocking)`);
+
+      // Set question start time AFTER questions are sent
+      gameState.questionStartTime = new Date();
+      console.log(`⏰ Question ${questionIndex + 1} start time set: ${gameState.questionStartTime.toISOString()}`);
+      
+      // Save updated game state to Redis
+      await this.setGameState(gameId, gameState);
+
+      // Start countdown timer AFTER questions are sent
+      await this.startQuestionTimer(gameId, questionIndex, 10);
 
       console.log(`❓ Question ${questionIndex + 1} started for game ${gameId}`);
 
@@ -665,6 +665,13 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
       const questionDuration = 10000; // 10 seconds question duration
       const maxAnswerTime = questionDuration; // No grace period - exactly 10 seconds
+      
+      // Debug timing information
+      console.log(`⏰ [TIMING] Question start: ${questionStartTime.toISOString()}`);
+      console.log(`⏰ [TIMING] Current time: ${new Date().toISOString()}`);
+      console.log(`⏰ [TIMING] Time since start: ${timeSinceQuestionStart}ms`);
+      console.log(`⏰ [TIMING] Max answer time: ${maxAnswerTime}ms`);
+      console.log(`⏰ [TIMING] Answer is ${timeSinceQuestionStart > maxAnswerTime ? 'TOO LATE' : 'ON TIME'}`);
       
       if (timeSinceQuestionStart > maxAnswerTime) {
         console.log(`⏰ Answer too late for ${phoneNumber} - ${timeSinceQuestionStart}ms since question start (max: ${maxAnswerTime}ms)`);
