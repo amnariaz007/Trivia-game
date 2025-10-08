@@ -48,14 +48,16 @@ class AnswerManager {
   }
 
   /**
-   * Record player answer with deduplication
+   * Record player answer with Unix timestamp for fast processing
    * @param {string} gameId - Game ID
    * @param {number} questionIndex - Question index (0-based)
    * @param {string} userId - User ID
    * @param {string} answer - Player's answer
-   * @returns {Promise<Object>} Result object
+   * @param {number} questionStartTime - Unix timestamp when question started
+   * @param {number} timeLimit - Time limit in milliseconds
+   * @returns {Promise<Object>} Result object with timing validation
    */
-  async recordAnswer(gameId, questionIndex, userId, answer) {
+  async recordAnswer(gameId, questionIndex, userId, answer, questionStartTime, timeLimit) {
     if (!this.isAvailable()) {
       console.log('⚠️  Redis not available, using fallback storage');
       return { status: 'fallback', message: 'Redis not available' };
@@ -73,26 +75,41 @@ class AnswerManager {
           status: 'duplicate', 
           message: 'Already answered',
           existingAnswer: existingData.answer,
-          timestamp: existingData.timestamp
+          timestamp: existingData.timestamp,
+          isOnTime: existingData.isOnTime
         };
       }
       
-      // Store answer with timestamp
+      // Use current timestamp for answer (Unix timestamp)
+      const answerTimestamp = Date.now();
+      
+      // Calculate time since question start but don't validate yet
+      const timeSinceQuestionStart = answerTimestamp - questionStartTime;
+      
+      // Store answer with timestamp - timing validation happens after timer expires
       const answerData = {
         answer: answer.trim().toLowerCase(),
-        timestamp: Date.now(),
+        timestamp: answerTimestamp,
+        questionStartTime: questionStartTime,
+        timeSinceStart: timeSinceQuestionStart,
+        timeLimit: timeLimit,
         userId: userId,
-        questionIndex: questionIndex
+        questionIndex: questionIndex,
+        gameId: gameId,
+        evaluated: false // Will be set to true after timer expires
       };
       
       // Store with 5 minute TTL (longer than game duration)
       await this.redis.setex(userKey, 300, JSON.stringify(answerData));
       
-      console.log(`✅ Answer recorded: ${userId} -> "${answer}" for Q${questionIndex + 1}`);
+      console.log(`✅ Answer recorded: ${userId} -> "${answer}" for Q${questionIndex + 1} (${timeSinceQuestionStart}ms, evaluation pending)`);
+      
       return { 
         status: 'recorded', 
-        message: 'Answer recorded successfully',
-        timestamp: answerData.timestamp
+        message: 'Answer recorded successfully - evaluation pending timer expiration',
+        timestamp: answerData.timestamp,
+        timeSinceStart: timeSinceQuestionStart,
+        timeLimit: timeLimit
       };
       
     } catch (error) {
@@ -207,6 +224,152 @@ class AnswerManager {
     } catch (error) {
       console.error('❌ Error getting answers for question:', error);
       return [];
+    }
+  }
+
+  /**
+   * Get a specific player's answer from Redis (fast lookup)
+   * @param {string} gameId - Game ID
+   * @param {number} questionIndex - Question index (0-based)
+   * @param {string} userId - User ID
+   * @returns {Promise<Object|null>} Answer data or null
+   */
+  async getPlayerAnswer(gameId, questionIndex, userId) {
+    if (!this.isAvailable()) {
+      return null;
+    }
+
+    try {
+      const key = `${this.keyPrefix}${gameId}:${questionIndex}`;
+      const userKey = `${key}:${userId}`;
+      
+      const answerData = await this.redis.get(userKey);
+      return answerData ? JSON.parse(answerData) : null;
+    } catch (error) {
+      console.error('❌ Error getting player answer:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Evaluate all answers after timer expires (timing validation)
+   * @param {string} gameId - Game ID
+   * @param {number} questionIndex - Question index (0-based)
+   * @param {string} correctAnswer - Correct answer for the question
+   * @returns {Promise<Object>} Evaluation results
+   */
+  async evaluateAnswersAfterTimer(gameId, questionIndex, correctAnswer) {
+    if (!this.isAvailable()) {
+      return { error: 'Redis not available' };
+    }
+
+    try {
+      const answers = await this.getAnswersForQuestion(gameId, questionIndex);
+      const results = {
+        totalAnswers: answers.length,
+        onTimeAnswers: 0,
+        lateAnswers: 0,
+        correctAnswers: 0,
+        wrongAnswers: 0,
+        playerResults: {}
+      };
+
+      for (const answerData of answers) {
+        const userId = answerData.userId;
+        
+        // Now validate timing after timer has expired
+        const isOnTime = answerData.timeSinceStart <= answerData.timeLimit;
+        const isCorrect = answerData.answer === correctAnswer.toLowerCase().trim();
+        
+        // Update the answer data with evaluation results
+        answerData.isOnTime = isOnTime;
+        answerData.isCorrect = isCorrect;
+        answerData.evaluated = true;
+        
+        // Update in Redis
+        const key = `${this.keyPrefix}${gameId}:${questionIndex}`;
+        const userKey = `${key}:${userId}`;
+        await this.redis.setex(userKey, 300, JSON.stringify(answerData));
+        
+        // Count results
+        if (isOnTime) {
+          results.onTimeAnswers++;
+          if (isCorrect) {
+            results.correctAnswers++;
+          } else {
+            results.wrongAnswers++;
+          }
+        } else {
+          results.lateAnswers++;
+        }
+        
+        results.playerResults[userId] = {
+          answer: answerData.answer,
+          isOnTime: isOnTime,
+          isCorrect: isCorrect,
+          timeSinceStart: answerData.timeSinceStart,
+          timeLimit: answerData.timeLimit
+        };
+      }
+
+      console.log(`📊 Answer evaluation completed: ${results.onTimeAnswers} on-time, ${results.lateAnswers} late, ${results.correctAnswers} correct, ${results.wrongAnswers} wrong`);
+      
+      return results;
+    } catch (error) {
+      console.error('❌ Error evaluating answers after timer:', error);
+      return { error: 'Failed to evaluate answers' };
+    }
+  }
+
+  /**
+   * Batch save answers to database after question ends
+   * @param {string} gameId - Game ID
+   * @param {number} questionIndex - Question index (0-based)
+   * @returns {Promise<Object>} Save results
+   */
+  async batchSaveAnswersToDatabase(gameId, questionIndex) {
+    if (!this.isAvailable()) {
+      return { error: 'Redis not available' };
+    }
+
+    try {
+      const answers = await this.getAnswersForQuestion(gameId, questionIndex);
+      const { PlayerAnswer } = require('../models');
+      
+      const savePromises = answers.map(async (answerData) => {
+        try {
+          await PlayerAnswer.create({
+            game_id: gameId,
+            user_id: answerData.userId,
+            question_id: answerData.questionId,
+            selected_answer: answerData.answer,
+            is_correct: answerData.isCorrect,
+            response_time_ms: answerData.timeSinceStart,
+            question_number: questionIndex + 1,
+            answer_timestamp: new Date(answerData.timestamp)
+          });
+          return { success: true, userId: answerData.userId };
+        } catch (error) {
+          console.error(`❌ Error saving answer for user ${answerData.userId}:`, error);
+          return { success: false, userId: answerData.userId, error: error.message };
+        }
+      });
+
+      const results = await Promise.all(savePromises);
+      const successCount = results.filter(r => r.success).length;
+      const errorCount = results.filter(r => !r.success).length;
+
+      console.log(`📊 Batch save results: ${successCount} successful, ${errorCount} errors`);
+      
+      return {
+        totalAnswers: answers.length,
+        successfulSaves: successCount,
+        errors: errorCount,
+        results: results
+      };
+    } catch (error) {
+      console.error('❌ Error in batch save:', error);
+      return { error: 'Failed to batch save answers' };
     }
   }
 
