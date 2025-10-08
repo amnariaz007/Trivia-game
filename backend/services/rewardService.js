@@ -237,6 +237,19 @@ You'll receive your payout within 24 hours. Thanks for playing!`;
   async announceGameEnd(game, prizeDistribution) {
     try {
       console.log('📢 Announcing game end...');
+      
+      // Check if game end announcement was already sent
+      const queueService = require('./queueService');
+      const announcementKey = `game_end_announced:${game.id}`;
+      const alreadyAnnounced = await queueService.redis?.get(announcementKey);
+      
+      if (alreadyAnnounced) {
+        console.log('📢 Game end announcement already sent, skipping duplicate');
+        return;
+      }
+      
+      // Mark as announced with 5-minute expiration
+      await queueService.redis?.setex(announcementKey, 300, 'announced');
 
       // Get all players in the game
       const allPlayers = await GamePlayer.findAll({

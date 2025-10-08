@@ -609,20 +609,31 @@ class GameService {
       // Save updated game state
       await this.setGameState(gameId, gameState);
 
-      // Send elimination message with full details
-      await queueService.addMessage('send_message', {
-        to: player.user.whatsapp_number,
-        message: `⏰ Too late! You answered after the question timer ended and have been eliminated.
+      // Check if elimination message was already sent
+      const eliminationKey = `elimination_sent:${gameId}:${player.user.whatsapp_number}:${gameState.currentQuestion + 1}`;
+      const alreadySent = await queueService.redis?.get(eliminationKey);
+      
+      if (!alreadySent) {
+        // Mark as sent with 5-minute expiration
+        await queueService.redis?.setex(eliminationKey, 300, 'sent');
+        
+        // Send elimination message with full details
+        await queueService.addMessage('send_message', {
+          to: player.user.whatsapp_number,
+          message: `⏰ Too late! You answered after the question timer ended and have been eliminated.
 
 ❌ Eliminated on: Question ${gameState.currentQuestion + 1}
 🎮 Game: ${gameId.slice(0, 8)}...
 ⏰ You responded after the timer ended.
 
 Stick around to watch the finish! Reply "PLAY" for the next game.`,
-        gameId: gameId,
-        messageType: 'late_elimination',
-        questionIndex: gameState.currentQuestion
-      });
+          gameId: gameId,
+          messageType: 'late_elimination',
+          questionIndex: gameState.currentQuestion
+        });
+      } else {
+        console.log(`🔄 Elimination message already sent to ${player.user.nickname}, skipping duplicate`);
+      }
 
       // Check if game should end (all players eliminated)
       const alivePlayers = gameState.players.filter(p => p.status === 'alive');
@@ -660,11 +671,11 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         throw new Error('Game not found or not active');
       }
 
-      // Check if the question is still active (10 seconds + 500ms buffer for network delays)
+      // Check if the question is still active (10 seconds + 1 second buffer for network delays)
       const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
       const questionDuration = 10000; // 10 seconds question duration
-      const maxAnswerTime = questionDuration + 500; // Add 500ms buffer for network delays
+      const maxAnswerTime = questionDuration + 1000; // Add 1 second buffer for network delays
       
       // Debug timing information
       console.log(`⏰ [TIMING] Question start: ${questionStartTime.toISOString()}`);
@@ -1055,20 +1066,31 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
 
           console.log(`⏰ Player ${player.user.nickname} eliminated for timeout on Q${questionIndex + 1}`);
 
-          // Send timeout elimination message
-          await queueService.addMessage('send_message', {
-            to: player.user.whatsapp_number,
-            message: `⏰ Time's up! You didn't answer in time and have been eliminated.
+          // Check if elimination message was already sent
+          const eliminationKey = `elimination_sent:${gameId}:${player.user.whatsapp_number}:${questionIndex + 1}`;
+          const alreadySent = await queueService.redis?.get(eliminationKey);
+          
+          if (!alreadySent) {
+            // Mark as sent with 5-minute expiration
+            await queueService.redis?.setex(eliminationKey, 300, 'sent');
+            
+            // Send timeout elimination message
+            await queueService.addMessage('send_message', {
+              to: player.user.whatsapp_number,
+              message: `⏰ Time's up! You didn't answer in time and have been eliminated.
 
 ❌ Eliminated on: Question ${questionIndex + 1}
 🎮 Game: ${gameId.slice(0, 8)}...
 ⏰ You didn't respond within the time limit.
 
 Stick around to watch the finish! Reply "PLAY" for the next game.`,
-            gameId: gameId,
-            messageType: 'timeout_elimination',
-            questionIndex: questionIndex
-          });
+              gameId: gameId,
+              messageType: 'timeout_elimination',
+              questionIndex: questionIndex
+            });
+          } else {
+            console.log(`🔄 Elimination message already sent to ${player.user.nickname}, skipping duplicate`);
+          }
         }
       }
 

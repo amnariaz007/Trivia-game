@@ -565,7 +565,7 @@ async function handleHelpCommand(user, wa_id) {
       message: `❓ How QRush Trivia Works:
 
 •⁠  ⁠Sudden-death: get every question right to stay in.
-•⁠  ⁠10s per question with countdown updates (10s → 5s → 2s → time's up).
+•⁠  ⁠10s per question with countdown.
 •⁠  ⁠Wrong or no answer = elimination.
 •⁠  ⁠If multiple players survive the final question, the prize pool is split evenly.
 •⁠  ⁠Winners are DM'd directly.
@@ -575,7 +575,6 @@ async function handleHelpCommand(user, wa_id) {
 •⁠  ⁠HELP - Show this message
 
 ⏰ Next game: ${nextGameTime}
-💰 Prize: $${prizePool}
 
 Reply "PLAY" for a reminder.`
     });
