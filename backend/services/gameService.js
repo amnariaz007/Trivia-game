@@ -437,7 +437,7 @@ class GameService {
       await this.setGameState(gameId, gameState);
 
       // Start countdown timer AFTER questions are sent
-      await this.startQuestionTimer(gameId, questionIndex, 10);
+      await this.startQuestionTimer(gameId, questionIndex, 12);
 
       console.log(`❓ Question ${questionIndex + 1} started for game ${gameId}`);
 
@@ -473,17 +473,17 @@ class GameService {
 
     console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s) with countdown reminders at ${new Date().toISOString()}`);
 
-    // Schedule 5-second reminder
+    // Schedule 5-second reminder (at 5 seconds for 12-second timer)
     const reminder5s = setTimeout(async () => {
       console.log(`⏰ 5s reminder firing at ${new Date().toISOString()}`);
       await this.sendCountdownReminder(gameId, questionIndex, 5);
     }, 5000);
 
-    // Main timeout (exactly 10 seconds)
+    // Main timeout (exactly 12 seconds)
     const mainTimer = setTimeout(async () => {
       console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout`);
       await this.handleQuestionTimeout(gameId, questionIndex);
-    }, 10000); // Exactly 10 seconds
+    }, 12000); // Exactly 12 seconds
 
     // Store timer IDs instead of timer objects (to avoid circular structure)
     gameState.questionTimerId = mainTimer[Symbol.toPrimitive] ? mainTimer[Symbol.toPrimitive]() : mainTimer.toString();
@@ -671,11 +671,11 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         throw new Error('Game not found or not active');
       }
 
-      // Check if the question is still active (10 seconds + 1 second buffer for network delays)
+      // Check if the question is still active (12 seconds question duration)
       const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
-      const questionDuration = 10000; // 10 seconds question duration
-      const maxAnswerTime = questionDuration + 1000; // Add 1 second buffer for network delays
+      const questionDuration = 12000; // 12 seconds question duration
+      const maxAnswerTime = questionDuration; // No buffer needed with 12s timer
       
       // Debug timing information
       console.log(`⏰ [TIMING] Question start: ${questionStartTime.toISOString()}`);
