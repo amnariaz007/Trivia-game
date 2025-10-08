@@ -757,30 +757,8 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         if (player.answer) {
           console.log(`❌ Player already answered: ${player.answer}`);
           
-          // Check if all players have answered and process results if needed
-          const alivePlayers = gameState.players.filter(p => p.status === 'alive');
-          const answeredPlayers = alivePlayers.filter(p => p.answer);
-          
-          if (answeredPlayers.length === alivePlayers.length && alivePlayers.length > 0) {
-            console.log(`🎯 All players answered, clearing timer and processing results for already answered player`);
-            
-            // Clear timers using the new timer management system
-            const timerKey = `${gameId}:${gameState.currentQuestion}`;
-            if (this.activeTimers && this.activeTimers.has(timerKey)) {
-              const timers = this.activeTimers.get(timerKey);
-              if (timers.questionTimer) clearTimeout(timers.questionTimer);
-              if (timers.countdownTimers) {
-                timers.countdownTimers.forEach(timer => clearTimeout(timer));
-              }
-              this.activeTimers.delete(timerKey);
-              console.log(`⏰ Cleared all timers - all players answered (already answered case)`);
-            }
-            
-            setTimeout(async () => {
-              console.log(`🚀 Processing question results for Q${gameState.currentQuestion + 1} (already answered)`);
-              await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
-            }, 1000);
-          }
+          // Player already answered - just return result, let timeout handle processing
+          console.log(`🔄 Player already answered, waiting for timeout to process results`);
           
           return {
             correct: player.answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim(),
@@ -867,47 +845,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         // Save updated game state to Redis after processing
         await this.setGameState(gameId, gameState);
 
-        // Check if all alive players have answered
-        const alivePlayers = gameState.players.filter(p => p.status === 'alive');
-        const answeredPlayers = alivePlayers.filter(p => p.answer);
-        
-        console.log(`🔍 Answer check: ${answeredPlayers.length}/${alivePlayers.length} players answered`);
-        console.log(`🔍 Answered players:`, answeredPlayers.map(p => `${p.user.nickname} (${p.answer})`));
-        console.log(`🔍 Non-answered players:`, alivePlayers.filter(p => !p.answer).map(p => p.user.nickname));
-        
-        // Process results immediately when any player answers (sudden-death style)
-        if (answeredPlayers.length > 0) {
-          console.log(`🎯 ${answeredPlayers.length} players answered, processing results immediately (sudden-death mode)`);
-          
-          // Clear the timer since we're processing results now
-          const timerKey = `${gameId}:${gameState.currentQuestion}`;
-          if (this.activeTimers && this.activeTimers.has(timerKey)) {
-            const timers = this.activeTimers.get(timerKey);
-            if (timers.questionTimer) {
-              clearTimeout(timers.questionTimer);
-              console.log(`⏰ Cleared main timer - processing results immediately`);
-            }
-            if (timers.countdownTimers) {
-              timers.countdownTimers.forEach(timer => clearTimeout(timer));
-              console.log(`⏰ Cleared countdown timers - processing results immediately`);
-            }
-            this.activeTimers.delete(timerKey);
-            console.log(`⏰ Removed timer entry for ${timerKey}`);
-          }
-          
-          // Process results immediately for answered players
-          setTimeout(async () => {
-            console.log(`🚀 [GAME_SERVICE] Processing question results for Q${gameState.currentQuestion + 1} (${answeredPlayers.length} players answered)`);
-            console.log(`🚀 [GAME_SERVICE] Calling processQuestionResultsWithLock with questionIndex=${gameState.currentQuestion}, correctAnswer="${currentQuestion.correct_answer}"`);
-            await this.processQuestionResultsWithLock(gameId, gameState.currentQuestion, currentQuestion.correct_answer);
-            
-            // Note: Players who didn't answer will be handled by the timeout handler
-            console.log(`📊 [GAME_SERVICE] Processed results for ${answeredPlayers.length} players who answered Q${gameState.currentQuestion + 1}`);
-          }, 1000); // Small delay to ensure answer is fully processed
-        } else {
-          console.log(`⏳ No players have answered yet, waiting for answers or timeout...`);
-          // No players answered yet, continue waiting for answers or timeout
-        }
+        // Store answer and continue - let timeout handler process everything
+        console.log(`📝 Answer stored for ${player.user.nickname}: "${player.answer}"`);
+        console.log(`⏳ Waiting for timeout to process all answers...`);
 
         return {
           correct: isCorrect,
@@ -1010,21 +950,8 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const playersWithoutAnswers = players.filter(p => p.status === 'alive' && (!p.answer || p.answer.trim() === ''));
       const playersWithAnswers = players.filter(p => p.status === 'alive' && p.answer);
       
-      if (playersWithoutAnswers.length === 0) {
-        console.log(`🔄 All alive players have answered Q${questionIndex + 1}, no timeout eliminations needed`);
-        
-        // If all players answered, check if we need to start the next question
-        if (playersWithAnswers.length > 0) {
-          console.log(`🎯 All ${playersWithAnswers.length} players answered Q${questionIndex + 1}, ensuring next question starts`);
-          
-          // Add a small delay to ensure all answer processing is complete
-          setTimeout(() => {
-            console.log(`🚀 [TIMEOUT_HANDLER] Ensuring next question starts for Q${questionIndex + 2}`);
-            this.startQuestion(gameId, questionIndex + 1);
-          }, 3000); // 3 second delay to ensure all processing is complete
-        }
-        return;
-      }
+      // Always process timeout eliminations - no early exit
+      console.log(`⏰ Processing timeout eliminations for Q${questionIndex + 1}`);
 
       console.log(`⏰ ${playersWithoutAnswers.length} players didn't answer Q${questionIndex + 1}, processing timeout eliminations`);
 
