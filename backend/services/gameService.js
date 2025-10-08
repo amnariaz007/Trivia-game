@@ -998,7 +998,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const alivePlayersAfterTimeout = gameState.players.filter(p => p.status === 'alive');
       
       if (alivePlayersAfterTimeout.length === 0) {
-        console.log(`💀 All players eliminated on Q${questionIndex + 1} (timeout)`);
+        console.log(` All players eliminated on Q${questionIndex + 1} (timeout)`);
         await this.endGame(gameId);
         return;
       }
@@ -1037,7 +1037,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const alivePlayersAfterEvaluation = gameState.players.filter(p => p.status === 'alive');
       
       if (alivePlayersAfterEvaluation.length === 0) {
-        console.log(`💀 All players eliminated on Q${questionIndex + 1}`);
+        console.log(` All players eliminated on Q${questionIndex + 1}`);
         await this.endGame(gameId);
         return;
       }
@@ -1185,7 +1185,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const alivePlayers = gameState.players.filter(p => p.status === 'alive');
       
       if (alivePlayers.length === 0) {
-        console.log(`💀 All players eliminated, ending game ${gameId}`);
+        console.log(` All players eliminated, ending game ${gameId}`);
         await this.endGame(gameId);
         return;
       }
@@ -1360,7 +1360,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const alivePlayersAfterProcessing = players.filter(p => p.status === 'alive');
       
       if (alivePlayersAfterProcessing.length === 0) {
-        console.log(`💀 All players eliminated on Q${questionIndex + 1}`);
+        console.log(` All players eliminated on Q${questionIndex + 1}`);
         await this.endGame(gameId);
         return;
       }
