@@ -95,6 +95,7 @@ class AnswerManager {
         timeLimit: timeLimit,
         userId: userId,
         questionIndex: questionIndex,
+        questionId: null, // Will be set when we have the actual question ID
         gameId: gameId,
         evaluated: false // Will be set to true after timer expires
       };
@@ -334,14 +335,26 @@ class AnswerManager {
 
     try {
       const answers = await this.getAnswersForQuestion(gameId, questionIndex);
-      const { PlayerAnswer } = require('../models');
+      const { PlayerAnswer, Question } = require('../models');
+      
+      // Get the actual question ID from database
+      const game = await require('../models').Game.findByPk(gameId, {
+        include: [{ model: Question, as: 'questions' }]
+      });
+      
+      if (!game || !game.questions || !game.questions[questionIndex]) {
+        console.error(`❌ Question not found for game ${gameId}, question ${questionIndex}`);
+        return { error: 'Question not found' };
+      }
+      
+      const questionId = game.questions[questionIndex].id;
       
       const savePromises = answers.map(async (answerData) => {
         try {
           await PlayerAnswer.create({
             game_id: gameId,
             user_id: answerData.userId,
-            question_id: answerData.questionId,
+            question_id: questionId, // Use the actual question ID from database
             selected_answer: answerData.answer,
             is_correct: answerData.isCorrect,
             response_time_ms: answerData.timeSinceStart,

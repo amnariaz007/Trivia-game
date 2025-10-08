@@ -878,9 +878,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
   // Handle question timeout - eliminate players who didn't answer
   async handleQuestionTimeout(gameId, questionIndex) {
     try {
-      // Add delay to prevent race condition with answer processing
-      await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
-      
+      // No delay needed - Redis timestamps handle race conditions
       const gameState = await this.getGameState(gameId);
       if (!gameState) return;
 
@@ -1482,6 +1480,40 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
   }
 
 
+  // Sync player statuses from Redis to database
+  async syncPlayerStatusesToDatabase(gameId, gameState) {
+    try {
+      const { GamePlayer } = require('../models');
+      
+      console.log(`🔄 Syncing ${gameState.players.length} player statuses to database...`);
+      
+      for (const player of gameState.players) {
+        try {
+          await GamePlayer.update(
+            { 
+              status: player.status,
+              eliminated_at: player.eliminatedAt || null,
+              eliminated_by_question: player.eliminatedOnQuestion || null
+            },
+            { 
+              where: { 
+                game_id: gameId, 
+                user_id: player.user.id 
+              } 
+            }
+          );
+          console.log(`✅ Updated ${player.user.nickname}: ${player.status}`);
+        } catch (error) {
+          console.error(`❌ Error updating ${player.user.nickname}:`, error);
+        }
+      }
+      
+      console.log(`✅ Player statuses synced to database`);
+    } catch (error) {
+      console.error('❌ Error syncing player statuses to database:', error);
+    }
+  }
+
   // End game
   async endGame(gameId) {
     try {
@@ -1528,6 +1560,10 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       this.activeGames.delete(gameId);
       console.log(`🧹 Game state cleaned up for: ${gameId}`);
 
+      // Update database with final player statuses from Redis before processing rewards
+      console.log(`🔄 Syncing final player statuses to database before processing rewards...`);
+      await this.syncPlayerStatusesToDatabase(gameId, gameState);
+      
       // Process rewards using reward service
       console.log(`🏆 About to process rewards for game: ${gameId}`);
       const gameResults = await rewardService.processGameRewards(gameId);
