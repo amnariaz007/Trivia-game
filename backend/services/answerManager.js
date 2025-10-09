@@ -137,8 +137,8 @@ class AnswerManager {
       const key = `${this.keyPrefix}${gameId}:${questionIndex}`;
       const pattern = `${key}:*`;
       
-      // Get all answer keys for this question
-      const keys = await this.redis.keys(pattern);
+      // Get all answer keys for this question (using safe scan)
+      const keys = await this.safeRedisScan(pattern);
       const results = {
         totalAnswers: 0,
         correctAnswers: 0,
@@ -213,7 +213,7 @@ class AnswerManager {
       const key = `${this.keyPrefix}${gameId}:${questionIndex}`;
       const pattern = `${key}:*`;
       
-      const keys = await this.redis.keys(pattern);
+      const keys = await this.safeRedisScan(pattern);
       const answers = [];
       
       for (const key of keys) {
@@ -401,7 +401,7 @@ class AnswerManager {
 
     try {
       const pattern = `${this.keyPrefix}${gameId}:*`;
-      const keys = await this.redis.keys(pattern);
+      const keys = await this.safeRedisScan(pattern);
       
       if (keys.length > 0) {
         await this.redis.del(...keys);
@@ -423,6 +423,25 @@ class AnswerManager {
       connected: this.connected,
       available: this.isAvailable()
     };
+  }
+
+  // Safe Redis scan to replace dangerous keys() command
+  async safeRedisScan(pattern) {
+    try {
+      const keys = [];
+      let cursor = '0';
+      
+      do {
+        const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = result[0];
+        keys.push(...result[1]);
+      } while (cursor !== '0');
+      
+      return keys;
+    } catch (error) {
+      console.error('❌ Error scanning Redis keys:', error);
+      return [];
+    }
   }
 }
 

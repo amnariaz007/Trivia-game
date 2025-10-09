@@ -154,15 +154,15 @@ class GameService {
 
       console.log(`🧹 Clearing stale Redis keys for game ${gameId}...`);
       
-      // Clear result_decided keys for this game
-      const resultKeys = await queueService.redis.keys(`result_decided:${gameId}:*`);
+      // Clear result_decided keys for this game (using safe scan)
+      const resultKeys = await this.safeRedisScan(`result_decided:${gameId}:*`);
       if (resultKeys.length > 0) {
         await queueService.redis.del(...resultKeys);
         console.log(`🗑️ Cleared ${resultKeys.length} stale result_decided keys`);
       }
 
-      // Clear any other game-specific keys that might cause issues
-      const gameKeys = await queueService.redis.keys(`*:${gameId}:*`);
+      // Clear any other game-specific keys that might cause issues (using safe scan)
+      const gameKeys = await this.safeRedisScan(`*:${gameId}:*`);
       if (gameKeys.length > 0) {
         console.log(`🔍 Found ${gameKeys.length} game-specific keys, clearing potentially stale ones...`);
         for (const key of gameKeys) {
@@ -312,14 +312,22 @@ class GameService {
       const isProcessing = await queueService.redis?.get(processingKey);
       if (isProcessing) {
         console.log(`⚠️ Question ${questionIndex + 1} already being processed, skipping duplicate`);
+        await this.releaseLock(lockKey);
         return;
       }
       
       // Mark as processing to prevent duplicates
       await queueService.redis?.setex(processingKey, 30, 'processing');
-
-      // Get current game state
+      
+      // Get current game state (single call)
       const gameState = await this.getGameState(gameId);
+      
+      // Additional check: ensure we're not starting a question that's already passed
+      if (gameState && gameState.currentQuestion > questionIndex) {
+        console.log(`⚠️ Question ${questionIndex + 1} already passed (current: ${gameState.currentQuestion + 1}), skipping`);
+        await this.releaseLock(lockKey);
+        return;
+      }
       if (!gameState) {
         console.log(`❌ Game state not found for ${gameId}`);
         await this.releaseLock(lockKey);
@@ -430,6 +438,10 @@ class GameService {
 
       // Release lock after successful completion
       await this.releaseLock(lockKey);
+      
+      // Clean up processing key
+      const cleanupKey = `question_processing:${gameId}:${questionIndex}`;
+      await queueService.redis?.del(cleanupKey);
 
     } catch (error) {
       console.error('❌ Error starting question:', error);
@@ -437,6 +449,9 @@ class GameService {
       if (lockKey) {
         await this.releaseLock(lockKey);
       }
+      // Clean up processing key on error
+      const errorCleanupKey = `question_processing:${gameId}:${questionIndex}`;
+      await queueService.redis?.del(errorCleanupKey);
       throw error;
     }
   }
@@ -1695,6 +1710,25 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
     } catch (error) {
       console.error('❌ Error releasing Redis lock:', error);
       return false;
+    }
+  }
+
+  // Safe Redis scan to replace dangerous keys() command
+  async safeRedisScan(pattern) {
+    try {
+      const keys = [];
+      let cursor = '0';
+      
+      do {
+        const result = await queueService.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = result[0];
+        keys.push(...result[1]);
+      } while (cursor !== '0');
+      
+      return keys;
+    } catch (error) {
+      console.error('❌ Error scanning Redis keys:', error);
+      return [];
     }
   }
 

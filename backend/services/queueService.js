@@ -652,11 +652,11 @@ class QueueService {
     try {
       console.log(`🧹 Clearing deduplication keys for game ${gameId}`);
       
-      // Get all keys matching the game pattern
-      const questionKeys = await this.redis.keys(`question_sent:${gameId}:*`);
-      const messageKeys = await this.redis.keys(`message_sent:${gameId}:*`);
-      const reminderKeys = await this.redis.keys(`reminder_sent:${gameId}:*`);
-      const resultKeys = await this.redis.keys(`result_decided:${gameId}:*`);
+      // Get all keys matching the game pattern (using safe scan)
+      const questionKeys = await this.safeRedisScan(`question_sent:${gameId}:*`);
+      const messageKeys = await this.safeRedisScan(`message_sent:${gameId}:*`);
+      const reminderKeys = await this.safeRedisScan(`reminder_sent:${gameId}:*`);
+      const resultKeys = await this.safeRedisScan(`result_decided:${gameId}:*`);
       
       const allKeys = [...questionKeys, ...messageKeys, ...reminderKeys, ...resultKeys];
       
@@ -668,6 +668,25 @@ class QueueService {
       }
     } catch (error) {
       console.error('❌ Error clearing deduplication keys:', error);
+    }
+  }
+
+  // Safe Redis scan to replace dangerous keys() command
+  async safeRedisScan(pattern) {
+    try {
+      const keys = [];
+      let cursor = '0';
+      
+      do {
+        const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = result[0];
+        keys.push(...result[1]);
+      } while (cursor !== '0');
+      
+      return keys;
+    } catch (error) {
+      console.error('❌ Error scanning Redis keys:', error);
+      return [];
     }
   }
 
