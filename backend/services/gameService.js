@@ -384,51 +384,36 @@ class GameService {
       // Send question to all alive players FIRST
       console.log(`📤 Sending question ${questionIndex + 1} to ${players.filter(p => p.status === 'alive').length} alive players`);
       
-      // Send questions asynchronously (don't await)
-      const sendPromises = [];
-      for (const player of players) {
-        if (player.status === 'alive') {
-          console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.nickname} (${player.user.whatsapp_number})`);
-          
-          // Send question directly for better reliability
-          const sendPromise = (async () => {
-            try {
-              const whatsappService = require('./whatsappService');
-              await whatsappService.sendQuestion(
-                player.user.whatsapp_number,
-                question.question_text,
-                [question.option_a, question.option_b, question.option_c, question.option_d],
-                questionIndex + 1,
-                question.correct_answer,
-                question.time_limit || 12
-              );
-              console.log(`✅ Question sent to ${player.user.nickname}`);
-            } catch (error) {
-              console.error(`❌ Failed to send question to ${player.user.nickname}:`, error);
-              // Try queue as fallback
-              try {
-                const job = await queueService.addMessage('send_question', {
-                  to: player.user.whatsapp_number,
-                  gameId,
-                  questionNumber: questionIndex + 1,
-                  questionText: question.question_text,
-                  options: [question.option_a, question.option_b, question.option_c, question.option_d],
-                  correctAnswer: question.correct_answer,
-                  timeLimit: question.time_limit || 12
-                });
-                console.log(`📤 Queue fallback for ${player.user.nickname}:`, job ? 'SUCCESS' : 'FAILED');
-              } catch (queueError) {
-                console.error(`❌ Queue fallback also failed for ${player.user.nickname}:`, queueError);
-              }
-            }
-          })();
-          
-          sendPromises.push(sendPromise);
-        }
-      }
+      // Optimized question sending for scalability
+      const alivePlayers = players.filter(p => p.status === 'alive');
+      const playerCount = alivePlayers.length;
+      
+      console.log(`📤 Sending question to ${playerCount} players using optimized batching`);
+      
+      // Use queue system for all questions to handle high volume
+      const questionPromises = alivePlayers.map(player => 
+        queueService.addMessage('send_question', {
+          to: player.user.whatsapp_number,
+          gameId,
+          questionNumber: questionIndex + 1,
+          questionText: question.question_text,
+          options: [question.option_a, question.option_b, question.option_c, question.option_d],
+          correctAnswer: question.correct_answer,
+          timeLimit: question.time_limit || 12,
+          priority: 'high' // High priority for questions
+        })
+      );
+      
+      // Process all questions through queue (non-blocking)
+      Promise.all(questionPromises).then(results => {
+        const successCount = results.filter(r => r !== null).length;
+        console.log(`📤 Question sending completed: ${successCount}/${playerCount} queued successfully`);
+      }).catch(error => {
+        console.error('❌ Error in batch question sending:', error);
+      });
       
       // Don't wait for question sending to complete
-      console.log(`📤 Question sending started for ${sendPromises.length} players (non-blocking)`);
+      console.log(`📤 Question sending started for ${playerCount} players (non-blocking)`);
 
       // Set question start time AFTER questions are sent
       gameState.questionStartTime = new Date();
@@ -475,12 +460,11 @@ class GameService {
 
     console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s) with countdown reminders at ${new Date().toISOString()}`);
 
-    // Schedule reminder at 5 seconds before timeout
-    const reminderTime = Math.max(5, totalSeconds - 7); // At least 5 seconds, or 5 seconds before timeout
+    // Schedule reminder at exactly 5 seconds after question starts
     const reminder5s = setTimeout(async () => {
-      console.log(`⏰ ${reminderTime}s reminder firing at ${new Date().toISOString()}`);
-      await this.sendCountdownReminder(gameId, questionIndex, reminderTime);
-    }, reminderTime * 1000);
+      console.log(`⏰ 5s reminder firing at ${new Date().toISOString()}`);
+      await this.sendCountdownReminder(gameId, questionIndex, 5);
+    }, 5000); // Exactly 5 seconds after question starts
 
     // Main timeout (exactly the specified time)
     const mainTimer = setTimeout(async () => {
@@ -523,43 +507,62 @@ class GameService {
       // Get fresh game state to ensure we have latest player statuses
       const freshGameState = await this.getGameState(gameId);
       const alivePlayers = freshGameState.players.filter(p => p.status === 'alive');
-      const playersNeedingReminder = alivePlayers.filter(p => !p.answer || p.answer.trim() === '');
+      
+      // Add small delay to ensure all recent answers are saved
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Get the most up-to-date game state after delay
+      const updatedGameState = await this.getGameState(gameId);
+      const updatedAlivePlayers = updatedGameState.players.filter(p => p.status === 'alive');
+      const playersNeedingReminder = updatedAlivePlayers.filter(p => !p.answer || p.answer.trim() === '');
 
-      console.log(`⏰ [COUNTDOWN] Game ${gameId} Q${questionIndex + 1}: Sending ${secondsLeft}s reminder to ${playersNeedingReminder.length}/${alivePlayers.length} players`);
+      console.log(`⏰ [COUNTDOWN] Game ${gameId} Q${questionIndex + 1}: Sending ${secondsLeft}s reminder to ${playersNeedingReminder.length}/${updatedAlivePlayers.length} players`);
       console.log(`⏰ [COUNTDOWN] Players needing reminder: ${playersNeedingReminder.map(p => p.user.nickname).join(', ')}`);
+      console.log(`⏰ [COUNTDOWN] Players who already answered: ${updatedAlivePlayers.filter(p => p.answer && p.answer.trim() !== '').map(p => `${p.user.nickname}(${p.answer})`).join(', ')}`);
 
       let remindersSent = 0;
       let duplicatesSkipped = 0;
       let eliminatedSkipped = 0;
 
-      for (const player of playersNeedingReminder) {
-        // Double-check player is still alive before sending (prevent race conditions)
-        const currentPlayer = freshGameState.players.find(p => p.user.whatsapp_number === player.user.whatsapp_number);
-        if (!currentPlayer || currentPlayer.status !== 'alive') {
-          eliminatedSkipped++;
-          console.log(`⏰ [COUNTDOWN] Skipped ${secondsLeft}s reminder for ${player.user.nickname} - player eliminated`);
-          continue;
-        }
-
-        // Check if reminder already sent to prevent duplicates
-        const reminderKey = `reminder_sent:${gameId}:${questionIndex}:${secondsLeft}:${player.user.whatsapp_number}`;
-        const alreadySent = await queueService.redis?.get(reminderKey);
+      // Send reminders in batches for better performance
+      const batchSize = 15; // Send to 15 players at a time
+      for (let i = 0; i < playersNeedingReminder.length; i += batchSize) {
+        const batch = playersNeedingReminder.slice(i, i + batchSize);
         
-        if (!alreadySent) {
-          await queueService.addMessage('send_message', {
-            to: player.user.whatsapp_number,
-            message: `• ${secondsLeft} seconds left to answer`,
-            gameId: gameId,
-            messageType: 'countdown_reminder'
-          });
+        const batchPromises = batch.map(async (player) => {
+          // Double-check player is still alive before sending
+          const currentPlayer = freshGameState.players.find(p => p.user.whatsapp_number === player.user.whatsapp_number);
+          if (!currentPlayer || currentPlayer.status !== 'alive') {
+            eliminatedSkipped++;
+            return;
+          }
+
+          // Check if reminder already sent to prevent duplicates
+          const reminderKey = `reminder_sent:${gameId}:${questionIndex}:${secondsLeft}:${player.user.whatsapp_number}`;
+          const alreadySent = await queueService.redis?.get(reminderKey);
           
-          // Mark as sent with short expiration
-          await queueService.redis?.setex(reminderKey, 30, 'sent');
-          remindersSent++;
-          console.log(`⏰ [COUNTDOWN] Sent ${secondsLeft}s reminder to ${player.user.nickname}`);
-        } else {
-          duplicatesSkipped++;
-          console.log(`⏰ [COUNTDOWN] Skipped duplicate ${secondsLeft}s reminder for ${player.user.nickname}`);
+          if (!alreadySent) {
+            await queueService.addMessage('send_message', {
+              to: player.user.whatsapp_number,
+              message: `⏰ ${secondsLeft} seconds left to answer`,
+              gameId: gameId,
+              messageType: 'countdown_reminder'
+            });
+            
+            // Mark as sent with short expiration
+            await queueService.redis?.setex(reminderKey, 30, 'sent');
+            remindersSent++;
+          } else {
+            duplicatesSkipped++;
+          }
+        });
+        
+        // Wait for batch to complete
+        await Promise.all(batchPromises);
+        
+        // Small delay between batches
+        if (i + batchSize < playersNeedingReminder.length) {
+          await new Promise(resolve => setTimeout(resolve, 50)); // 50ms delay
         }
       }
 

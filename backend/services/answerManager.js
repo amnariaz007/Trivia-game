@@ -278,9 +278,12 @@ class AnswerManager {
       for (const answerData of answers) {
         const userId = answerData.userId;
         
-        // Now validate timing after timer has expired
-        const isOnTime = answerData.timeSinceStart <= answerData.timeLimit;
+        // Validate timing with a small buffer to account for processing delays
+        const timeBuffer = 1000; // 1 second buffer for processing delays
+        const isOnTime = answerData.timeSinceStart <= (answerData.timeLimit + timeBuffer);
         const isCorrect = answerData.answer === correctAnswer.toLowerCase().trim();
+        
+        console.log(`🎯 [EVALUATION] Player ${userId}: answer="${answerData.answer}", timeSinceStart=${answerData.timeSinceStart}ms, timeLimit=${answerData.timeLimit}ms, isOnTime=${isOnTime}, isCorrect=${isCorrect}`);
         
         // Update the answer data with evaluation results
         answerData.isOnTime = isOnTime;

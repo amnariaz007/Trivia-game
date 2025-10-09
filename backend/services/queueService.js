@@ -151,10 +151,10 @@ class QueueService {
     }
 
     console.log('🔧 Setting up queue handlers...');
-    console.log('⚡ Message queue concurrency: 10 workers (stable)');
-    console.log('⚡ Game queue concurrency: 5 workers (stable)');
+    console.log('⚡ Message queue concurrency: 20 workers (optimized for many users)');
+    console.log('⚡ Game queue concurrency: 10 workers (optimized for many users)');
 
-    this.messageQueue.process('send_message', 10, async (job) => {
+    this.messageQueue.process('send_message', 20, async (job) => {
       try {
         console.log('📤 Processing send_message job:', job.id);
         return await this.processMessage(job.data);
@@ -164,7 +164,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_template', 10, async (job) => {
+    this.messageQueue.process('send_template', 20, async (job) => {
       try {
         console.log('📤 Processing send_template job:', job.id);
         return await this.processTemplate(job.data);
@@ -174,7 +174,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_question', 10, async (job) => {
+    this.messageQueue.process('send_question', 20, async (job) => {
       try {
         console.log('📤 Processing send_question job:', job.id);
         return await this.processQuestion(job.data);
@@ -184,7 +184,7 @@ class QueueService {
       }
     });
 
-    this.messageQueue.process('send_elimination', 10, async (job) => {
+    this.messageQueue.process('send_elimination', 20, async (job) => {
       try {
         console.log('📤 Processing send_elimination job:', job.id);
         return await this.processElimination(job.data);
@@ -194,7 +194,7 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('game_timer', 5, async (job) => {
+    this.gameQueue.process('game_timer', 10, async (job) => {
       try {
         console.log('⏰ Processing game_timer job:', job.id);
         return await this.processGameTimer(job.data);
@@ -204,7 +204,7 @@ class QueueService {
       }
     });
 
-    this.gameQueue.process('question_timer', 5, async (job) => {
+    this.gameQueue.process('question_timer', 10, async (job) => {
       try {
         console.log('❓ Processing question_timer job:', job.id);
         return await this.processQuestionTimer(job.data);
@@ -372,7 +372,7 @@ class QueueService {
     console.log(`📤 [QUEUE_SERVICE] - QuestionIndex: ${questionIndex}`);
     
     // Create deduplication key for critical game messages
-    if (gameId && messageType && ['game_start', 'elimination', 'late_elimination', 'timeout_elimination', 'game_end', 'emergency_end'].includes(messageType)) {
+    if (gameId && messageType && ['game_start', 'elimination', 'late_elimination', 'timeout_elimination', 'game_end', 'emergency_end', 'question_sent', 'countdown_reminder'].includes(messageType)) {
       // Include question index for elimination messages to prevent cross-question duplicates
       const dedupeKey = questionIndex !== undefined ? 
         `message_sent:${gameId}:${messageType}:${questionIndex}:${to}` :
@@ -388,8 +388,9 @@ class QueueService {
             return { message: 'duplicate_skipped' };
           }
           
-          // Mark as sent with 60 second expiration for elimination messages
-          const expiration = messageType === 'elimination' ? 60 : 30;
+          // Mark as sent with appropriate expiration
+          const expiration = ['elimination', 'late_elimination', 'timeout_elimination'].includes(messageType) ? 60 : 
+                           messageType === 'countdown_reminder' ? 15 : 30;
           await this.redis.setex(dedupeKey, expiration, 'sent');
           console.log(`✅ [QUEUE_SERVICE] ${messageType} message marked as sent to ${to}`);
         } catch (error) {
