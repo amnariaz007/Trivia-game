@@ -398,32 +398,38 @@ class GameService {
       
       console.log(`📤 Sending question to ${playerCount} players using optimized batching`);
       
-      // Use queue system for all questions to handle high volume
-      const questionPromises = alivePlayers.map(player => 
-        queueService.addMessage('send_question', {
-          to: player.user.whatsapp_number,
-          gameId,
-          questionNumber: questionIndex + 1,
-          questionText: question.question_text,
-          options: [question.option_a, question.option_b, question.option_c, question.option_d],
-          correctAnswer: question.correct_answer,
-          timeLimit: question.time_limit || 14,
-          priority: 'high' // High priority for questions
-        })
-      );
+      // Send questions directly (synchronously) to ensure all are sent before timer starts
+      console.log(`📤 Sending questions directly to ${playerCount} players...`);
+      const whatsappService = require('./whatsappService');
       
-      // WAIT for all questions to be queued successfully before starting timer
-      console.log(`📤 Queuing questions for ${playerCount} players...`);
+      const questionPromises = alivePlayers.map(async (player) => {
+        try {
+          console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.whatsapp_number}`);
+          const result = await whatsappService.sendQuestion(
+            player.user.whatsapp_number,
+            question.question_text,
+            [question.option_a, question.option_b, question.option_c, question.option_d],
+            questionIndex + 1,
+            question.correct_answer
+          );
+          console.log(`✅ Question ${questionIndex + 1} sent to ${player.user.whatsapp_number}`);
+          return result;
+        } catch (error) {
+          console.error(`❌ Failed to send question to ${player.user.whatsapp_number}:`, error);
+          return null;
+        }
+      });
+      
+      // Wait for all questions to be sent
       const results = await Promise.all(questionPromises);
       const successCount = results.filter(r => r !== null).length;
-      console.log(`📤 Question queuing completed: ${successCount}/${playerCount} queued successfully`);
-
-      // Add delivery delay buffer to account for WhatsApp processing time
-      const deliveryBuffer = 3000; // 3 seconds for WhatsApp delivery
-      console.log(`⏰ Waiting ${deliveryBuffer}ms for question delivery...`);
-      await new Promise(resolve => setTimeout(resolve, deliveryBuffer));
+      console.log(`📤 Question sending completed: ${successCount}/${playerCount} sent successfully`);
       
-      console.log(`✅ Question delivery buffer completed - timer will start now`);
+      // Add small buffer for WhatsApp delivery confirmation
+      console.log(`⏰ Waiting 2 seconds for delivery confirmation...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      console.log(`✅ Question delivery completed - timer will start now`);
 
       // Set question start time AFTER questions are delivered
       gameState.questionStartTime = new Date();
@@ -822,19 +828,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         // Database operations are now handled asynchronously after question ends
         // This eliminates the 5-6 second processing delay during answer submission
 
-        // Send single confirmation message with deduplication
-        const confirmDedupeKey = `confirm_sent:${gameId}:${gameState.currentQuestion}:${phoneNumber}`;
-        const confirmAlreadySent = await queueService.redis?.get(confirmDedupeKey);
-        
-        if (!confirmAlreadySent) {
-          await queueService.addMessage('send_message', {
-            to: phoneNumber,
-            message: `✅ Answer recorded! Please wait for the timer to end for evaluation.`
-          });
-          
-          // Mark as sent to prevent duplicates
-          await queueService.redis?.setex(confirmDedupeKey, 60, 'sent');
-        }
+        // Don't send confirmation message immediately - let the evaluation handle all messaging
+        // This prevents confusion and ensures consistent messaging
+        console.log(`✅ Answer recorded for ${player.user.nickname}: "${answer}" (correct: ${isCorrect})`);
 
         // Save updated game state to Redis after processing
         await this.setGameState(gameId, gameState);
@@ -1036,6 +1032,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const answerManager = require('./answerManager');
       console.log(`🎯 [TIMER_EXPIRED] Evaluating all answers for Q${questionIndex + 1} after 14-second timer`);
       
+      
       const evaluationResults = await answerManager.evaluateAnswersAfterTimer(
         gameId, 
         questionIndex, 
@@ -1083,12 +1080,13 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         console.log(`✅ Cleared timers for Q${questionIndex + 1} after evaluation`);
       }
 
-      // Start next question after evaluation
+      // Wait for elimination messages to be sent before starting next question
       console.log(`⏭️  Continuing to next question. ${alivePlayersAfterEvaluation.length} players alive`);
+      console.log(`⏰ Waiting 5 seconds for elimination messages to be delivered...`);
       setTimeout(() => {
         console.log(`🚀 Starting next question ${questionIndex + 2} for game ${gameId}`);
         this.startQuestion(gameId, questionIndex + 1);
-      }, 2000);
+      }, 5000); // Increased from 2 seconds to 5 seconds
 
     } catch (error) {
       console.error('❌ Error handling question timeout:', error);
