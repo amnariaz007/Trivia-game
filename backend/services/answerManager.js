@@ -281,9 +281,14 @@ class AnswerManager {
         // Validate timing with a small buffer to account for processing delays
         const timeBuffer = 1000; // 1 second buffer for processing delays
         const isOnTime = answerData.timeSinceStart <= (answerData.timeLimit + timeBuffer);
-        const isCorrect = answerData.answer === correctAnswer.toLowerCase().trim();
+        
+        // Robust answer comparison - normalize both answers
+        const normalizedPlayerAnswer = answerData.answer.toLowerCase().trim().replace(/[^\w\s]/g, '');
+        const normalizedCorrectAnswer = correctAnswer.toLowerCase().trim().replace(/[^\w\s]/g, '');
+        const isCorrect = normalizedPlayerAnswer === normalizedCorrectAnswer;
         
         console.log(`🎯 [EVALUATION] Player ${userId}: answer="${answerData.answer}", timeSinceStart=${answerData.timeSinceStart}ms, timeLimit=${answerData.timeLimit}ms, isOnTime=${isOnTime}, isCorrect=${isCorrect}`);
+        console.log(`🎯 [EVALUATION] Answer comparison: "${normalizedPlayerAnswer}" === "${normalizedCorrectAnswer}" = ${isCorrect}`);
         
         // Update the answer data with evaluation results
         answerData.isOnTime = isOnTime;

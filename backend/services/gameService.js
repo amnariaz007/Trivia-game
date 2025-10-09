@@ -94,7 +94,7 @@ class GameService {
             option_b: q.option_b,
             option_c: q.option_c,
             option_d: q.option_d,
-            time_limit: q.time_limit || 12
+            time_limit: q.time_limit || 14
           })),
           players: game.players.map(p => ({
             user: {
@@ -298,9 +298,9 @@ class GameService {
     try {
       console.log(`🎯 startQuestion called: gameId=${gameId}, questionIndex=${questionIndex}`);
       
-      // Use Redis lock to prevent race conditions
+      // Use Redis lock to prevent race conditions (reduced timeout for better concurrency)
       lockKey = `game_lock:${gameId}:question:${questionIndex}`;
-      const lockAcquired = await this.acquireLock(lockKey, 30); // 30 second lock
+      const lockAcquired = await this.acquireLock(lockKey, 10); // Reduced to 10 seconds for better concurrency
       
       if (!lockAcquired) {
         console.log(`⚠️ Could not acquire lock for game ${gameId} question ${questionIndex}, skipping`);
@@ -407,7 +407,7 @@ class GameService {
           questionText: question.question_text,
           options: [question.option_a, question.option_b, question.option_c, question.option_d],
           correctAnswer: question.correct_answer,
-          timeLimit: question.time_limit || 12,
+          timeLimit: question.time_limit || 14,
           priority: 'high' // High priority for questions
         })
       );
@@ -431,8 +431,10 @@ class GameService {
       await this.setGameState(gameId, gameState);
 
       // Start countdown timer AFTER questions are sent
-      const questionTimeLimit = question.time_limit || 12;
-      await this.startQuestionTimer(gameId, questionIndex, questionTimeLimit);
+      const questionTimeLimit = question.time_limit || 14;
+      // Add 2 seconds buffer for WhatsApp delivery delay
+      const actualTimeLimit = questionTimeLimit + 2; // 14 + 2 = 16 seconds
+      await this.startQuestionTimer(gameId, questionIndex, actualTimeLimit);
 
       console.log(`❓ Question ${questionIndex + 1} started for game ${gameId}`);
 
@@ -473,17 +475,23 @@ class GameService {
       this.activeTimers.delete(timerKey);
     }
 
-    console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s) with countdown reminders at ${new Date().toISOString()}`);
+    const startTime = new Date();
+    console.log(`⏰ Starting timer for question ${questionIndex + 1} (${totalSeconds}s) with countdown reminders at ${startTime.toISOString()}`);
+    console.log(`⏰ [TIMER DEBUG] Question ${questionIndex + 1} timer started at: ${startTime.getTime()}`);
 
     // Schedule reminder at exactly 5 seconds after question starts
     const reminder5s = setTimeout(async () => {
-      console.log(`⏰ 5s reminder firing at ${new Date().toISOString()}`);
+      const reminderTime = new Date();
+      console.log(`⏰ 5s reminder firing at ${reminderTime.toISOString()}`);
+      console.log(`⏰ [TIMER DEBUG] 5s reminder at: ${reminderTime.getTime()}, elapsed: ${reminderTime.getTime() - startTime.getTime()}ms`);
       await this.sendCountdownReminder(gameId, questionIndex, 5);
-    }, 5000); // Exactly 5 seconds after question starts
+    }, 5000); // Exactly 5 seconds after question starts (no change needed)
 
     // Main timeout (exactly the specified time)
     const mainTimer = setTimeout(async () => {
+      const timeoutTime = new Date();
       console.log(`⏰ Question ${questionIndex + 1} time expired - processing timeout`);
+      console.log(`⏰ [TIMER DEBUG] Timeout at: ${timeoutTime.getTime()}, elapsed: ${timeoutTime.getTime() - startTime.getTime()}ms`);
       await this.handleQuestionTimeout(gameId, questionIndex);
     }, totalSeconds * 1000); // Use the actual time limit
 
@@ -552,24 +560,16 @@ class GameService {
             return;
           }
 
-          // Check if reminder already sent to prevent duplicates
-          const reminderKey = `reminder_sent:${gameId}:${questionIndex}:${secondsLeft}:${player.user.whatsapp_number}`;
-          const alreadySent = await queueService.redis?.get(reminderKey);
+          // Use queueService deduplication instead of manual checking
+          await queueService.addMessage('send_message', {
+            to: player.user.whatsapp_number,
+            message: `⏰ ${secondsLeft} seconds left to answer`,
+            gameId: gameId,
+            messageType: 'countdown_reminder',
+            questionIndex: questionIndex
+          });
           
-          if (!alreadySent) {
-            await queueService.addMessage('send_message', {
-              to: player.user.whatsapp_number,
-              message: `⏰ ${secondsLeft} seconds left to answer`,
-              gameId: gameId,
-              messageType: 'countdown_reminder'
-            });
-            
-            // Mark as sent with short expiration
-            await queueService.redis?.setex(reminderKey, 30, 'sent');
-            remindersSent++;
-          } else {
-            duplicatesSkipped++;
-          }
+          remindersSent++;
         });
         
         // Wait for batch to complete
@@ -694,7 +694,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       const questionStartTime = gameState.questionStartTime instanceof Date ? gameState.questionStartTime : new Date(gameState.questionStartTime);
       const timeSinceQuestionStart = Date.now() - questionStartTime.getTime();
       const currentQuestion = gameState.questions[gameState.currentQuestion];
-      const questionDuration = (currentQuestion?.time_limit || 12) * 1000; // Convert to milliseconds
+      const questionDuration = (currentQuestion?.time_limit || 14) * 1000; // Convert to milliseconds
       const maxAnswerTime = questionDuration;
       
       // Debug timing information (only log if answer is late)
@@ -803,15 +803,20 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         // Double-check if player already answered (with lock)
         if (player.answer) {
           // Player already answered - just return result, let timeout handle processing
+          // Robust answer comparison for already answered players
+          const normalizedPlayerAnswer = player.answer.toLowerCase().trim().replace(/[^\w\s]/g, '');
+          const normalizedCorrectAnswer = currentQuestion.correct_answer.toLowerCase().trim().replace(/[^\w\s]/g, '');
           return {
-            correct: player.answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim(),
+            correct: normalizedPlayerAnswer === normalizedCorrectAnswer,
             correctAnswer: currentQuestion.correct_answer,
             alreadyAnswered: true
           };
         }
 
-        // Answer already set above, just verify
-        const isCorrect = answer.toLowerCase().trim() === currentQuestion.correct_answer.toLowerCase().trim();
+        // Answer already set above, just verify with robust comparison
+        const normalizedPlayerAnswer = answer.toLowerCase().trim().replace(/[^\w\s]/g, '');
+        const normalizedCorrectAnswer = currentQuestion.correct_answer.toLowerCase().trim().replace(/[^\w\s]/g, '');
+        const isCorrect = normalizedPlayerAnswer === normalizedCorrectAnswer;
         
         // Database operations are now handled asynchronously after question ends
         // This eliminates the 5-6 second processing delay during answer submission
@@ -1028,7 +1033,7 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
 
       // FIRST: Evaluate all answers after timer expires (timing validation)
       const answerManager = require('./answerManager');
-      console.log(`🎯 [TIMER_EXPIRED] Evaluating all answers for Q${questionIndex + 1} after 12-second timer`);
+      console.log(`🎯 [TIMER_EXPIRED] Evaluating all answers for Q${questionIndex + 1} after 14-second timer`);
       
       const evaluationResults = await answerManager.evaluateAnswersAfterTimer(
         gameId, 
@@ -1097,6 +1102,10 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
 
       const { players } = gameState;
       
+      // Collect all eliminations for batch processing
+      const eliminationsToProcess = [];
+      const messagesToSend = [];
+      
       for (const [userId, result] of Object.entries(evaluationResults.playerResults)) {
         const player = players.find(p => p.user.id === userId);
         if (!player || player.status !== 'alive') continue;
@@ -1111,8 +1120,17 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
           
           console.log(`⏰ Player ${player.user.nickname} eliminated for late answer (${result.timeSinceStart}ms > ${result.timeLimit}ms)`);
           
-          // Send elimination message
-          await queueService.addMessage('send_message', {
+          // Collect for batch database update
+          eliminationsToProcess.push({
+            game_id: gameId,
+            user_id: player.user.id,
+            status: 'eliminated',
+            eliminated_at: new Date(),
+            eliminated_by_question: questionIndex + 1
+          });
+          
+          // Collect message for batch sending
+          messagesToSend.push({
             to: player.user.whatsapp_number,
             message: `⏰ Too late! You answered after the question timer ended and have been eliminated.
 
@@ -1122,7 +1140,8 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
 
 Stick around to watch the finish! Reply "PLAY" for the next game.`,
             gameId: gameId,
-            messageType: 'late_elimination'
+            messageType: 'late_elimination',
+            questionIndex: questionIndex
           });
           
         } else if (!result.isCorrect) {
@@ -1134,29 +1153,53 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
           
           console.log(`❌ Player ${player.user.nickname} eliminated for wrong answer: "${result.answer}"`);
           
-          // Send elimination message
-          await queueService.addMessage('send_message', {
+          // Collect for batch database update
+          eliminationsToProcess.push({
+            game_id: gameId,
+            user_id: player.user.id,
+            status: 'eliminated',
+            eliminated_at: new Date(),
+            eliminated_by_question: questionIndex + 1
+          });
+          
+          // Collect message for batch sending
+          messagesToSend.push({
             to: player.user.whatsapp_number,
             message: `❌ Wrong Answer: ${gameState.questions[questionIndex].correct_answer}
 
 💀 You're out this game. Stick around to watch the finish!`,
             gameId: gameId,
-            messageType: 'wrong_answer_elimination'
+            messageType: 'elimination',
+            questionIndex: questionIndex
           });
           
         } else {
           // Correct answer - send success message
           console.log(`✅ Player ${player.user.nickname} answered correctly: "${result.answer}"`);
           
-          await queueService.addMessage('send_message', {
+          // Collect message for batch sending
+          messagesToSend.push({
             to: player.user.whatsapp_number,
             message: `✅ Correct Answer: ${gameState.questions[questionIndex].correct_answer}
 
 🎉 You're still in!`,
             gameId: gameId,
-            messageType: 'correct_answer'
+            messageType: 'correct_answer',
+            questionIndex: questionIndex
           });
         }
+      }
+
+      // Batch update database (single operation instead of 100+ individual updates)
+      if (eliminationsToProcess.length > 0) {
+        console.log(`📊 Batch updating ${eliminationsToProcess.length} eliminations in database`);
+        await this.batchUpdateEliminations(eliminationsToProcess);
+      }
+
+      // Batch send messages (non-blocking)
+      if (messagesToSend.length > 0) {
+        console.log(`📤 Batch sending ${messagesToSend.length} messages`);
+        this.batchSendMessages(messagesToSend);
       }
 
       // Save updated game state
@@ -1734,6 +1777,63 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
 
   async acquireRedisLock(lockKey, ttl = 30) {
     return this.acquireLock(lockKey, ttl);
+  }
+
+  // Batch update eliminations in database (single operation for 100+ users)
+  async batchUpdateEliminations(eliminations) {
+    try {
+      if (eliminations.length === 0) return;
+      
+      console.log(`📊 Batch updating ${eliminations.length} eliminations in database`);
+      
+      // Use bulk update with CASE statements for better performance
+      const userIds = eliminations.map(e => e.user_id);
+      const gameIds = eliminations.map(e => e.game_id);
+      
+      // Update all eliminations in a single query
+      await GamePlayer.update(
+        { 
+          status: 'eliminated',
+          eliminated_at: new Date(),
+          eliminated_by_question: eliminations[0].eliminated_by_question
+        },
+        { 
+          where: { 
+            game_id: eliminations[0].game_id,
+            user_id: userIds
+          } 
+        }
+      );
+      
+      console.log(`✅ Batch updated ${eliminations.length} eliminations in database`);
+    } catch (error) {
+      console.error('❌ Error in batch elimination update:', error);
+    }
+  }
+
+  // Batch send messages (non-blocking for high concurrency)
+  async batchSendMessages(messages) {
+    try {
+      if (messages.length === 0) return;
+      
+      console.log(`📤 Batch sending ${messages.length} messages`);
+      
+      // Send all messages in parallel (non-blocking)
+      const messagePromises = messages.map(messageData => 
+        queueService.addMessage('send_message', messageData)
+      );
+      
+      // Don't wait for all to complete - let them process in background
+      Promise.all(messagePromises).then(results => {
+        const successCount = results.filter(r => r !== null).length;
+        console.log(`📤 Batch message sending completed: ${successCount}/${messages.length} queued`);
+      }).catch(error => {
+        console.error('❌ Error in batch message sending:', error);
+      });
+      
+    } catch (error) {
+      console.error('❌ Error in batch message sending:', error);
+    }
   }
 
   async releaseRedisLock(lockKey) {

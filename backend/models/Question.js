@@ -72,7 +72,7 @@ const Question = sequelize.define('Question', {
   },
   time_limit: {
     type: DataTypes.INTEGER,
-    defaultValue: 12,
+    defaultValue: 14,
     validate: {
       min: 5,
       max: 60
@@ -150,7 +150,7 @@ Question.createFromTemplate = function(template, gameId, order) {
     question_order: order,
     category: template.category || 'general',
     difficulty: template.difficulty || 'medium',
-    time_limit: template.time_limit || 12
+    time_limit: template.time_limit || 14
   });
 };
 
