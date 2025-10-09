@@ -279,7 +279,7 @@ class AnswerManager {
         const userId = answerData.userId;
         
         // Validate timing with a small buffer to account for processing delays
-        const timeBuffer = 1000; // 1 second buffer for processing delays
+        const timeBuffer = 500; // 0.5 second buffer for processing delays only
         const isOnTime = answerData.timeSinceStart <= (answerData.timeLimit + timeBuffer);
         
         // Robust answer comparison - normalize both answers

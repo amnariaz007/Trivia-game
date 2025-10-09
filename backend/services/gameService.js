@@ -412,29 +412,30 @@ class GameService {
         })
       );
       
-      // Process all questions through queue (non-blocking)
-      Promise.all(questionPromises).then(results => {
-        const successCount = results.filter(r => r !== null).length;
-        console.log(`📤 Question sending completed: ${successCount}/${playerCount} queued successfully`);
-      }).catch(error => {
-        console.error('❌ Error in batch question sending:', error);
-      });
-      
-      // Don't wait for question sending to complete
-      console.log(`📤 Question sending started for ${playerCount} players (non-blocking)`);
+      // WAIT for all questions to be queued successfully before starting timer
+      console.log(`📤 Queuing questions for ${playerCount} players...`);
+      const results = await Promise.all(questionPromises);
+      const successCount = results.filter(r => r !== null).length;
+      console.log(`📤 Question queuing completed: ${successCount}/${playerCount} queued successfully`);
 
-      // Set question start time AFTER questions are sent
+      // Add delivery delay buffer to account for WhatsApp processing time
+      const deliveryBuffer = 3000; // 3 seconds for WhatsApp delivery
+      console.log(`⏰ Waiting ${deliveryBuffer}ms for question delivery...`);
+      await new Promise(resolve => setTimeout(resolve, deliveryBuffer));
+      
+      console.log(`✅ Question delivery buffer completed - timer will start now`);
+
+      // Set question start time AFTER questions are delivered
       gameState.questionStartTime = new Date();
       console.log(`⏰ Question ${questionIndex + 1} start time set: ${gameState.questionStartTime.toISOString()}`);
       
       // Save updated game state to Redis
       await this.setGameState(gameId, gameState);
 
-      // Start countdown timer AFTER questions are sent
+      // Start countdown timer AFTER questions are delivered
       const questionTimeLimit = question.time_limit || 14;
-      // Add 2 seconds buffer for WhatsApp delivery delay
-      const actualTimeLimit = questionTimeLimit + 2; // 14 + 2 = 16 seconds
-      await this.startQuestionTimer(gameId, questionIndex, actualTimeLimit);
+      // Use the actual time limit without additional buffer since we already waited for delivery
+      await this.startQuestionTimer(gameId, questionIndex, questionTimeLimit);
 
       console.log(`❓ Question ${questionIndex + 1} started for game ${gameId}`);
 
