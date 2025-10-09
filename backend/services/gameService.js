@@ -893,10 +893,9 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       
       console.log(`⏰ Question ${questionIndex + 1} timeout - processing eliminations at ${new Date().toISOString()}`);
 
-      // Check if timer was already cleared (meaning results were processed)
-      const timerKey = `${gameId}:${questionIndex}`;
-      if (!this.activeTimers || !this.activeTimers.has(timerKey)) {
-        console.log(`🔄 Timer for Q${questionIndex + 1} was already cleared, skipping timeout elimination`);
+      // Check if question has already been processed (moved to next question)
+      if (gameState.currentQuestion > questionIndex) {
+        console.log(`⏰ Question ${questionIndex + 1} already processed, skipping timeout`);
         return;
       }
 
@@ -1046,6 +1045,18 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
         console.log(`🏁 Last question completed. ${alivePlayersAfterEvaluation.length} survivors!`);
         await this.endGame(gameId);
         return;
+      }
+
+      // Clear timer after evaluation is complete
+      const timerKey = `${gameId}:${questionIndex}`;
+      if (this.activeTimers && this.activeTimers.has(timerKey)) {
+        const timers = this.activeTimers.get(timerKey);
+        if (timers.questionTimer) clearTimeout(timers.questionTimer);
+        if (timers.countdownTimers) {
+          timers.countdownTimers.forEach(timer => clearTimeout(timer));
+        }
+        this.activeTimers.delete(timerKey);
+        console.log(`✅ Cleared timers for Q${questionIndex + 1} after evaluation`);
       }
 
       // Start next question after evaluation
