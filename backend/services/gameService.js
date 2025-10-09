@@ -398,36 +398,31 @@ class GameService {
       
       console.log(`📤 Sending question to ${playerCount} players using optimized batching`);
       
-      // Send questions directly (synchronously) to ensure all are sent before timer starts
-      console.log(`📤 Sending questions directly to ${playerCount} players...`);
-      const whatsappService = require('./whatsappService');
+      // Hybrid approach: Use queue for scalability but wait for completion
+      console.log(`📤 Sending questions to ${playerCount} players using hybrid approach...`);
       
-      const questionPromises = alivePlayers.map(async (player) => {
-        try {
-          console.log(`📤 Sending question ${questionIndex + 1} to ${player.user.whatsapp_number}`);
-          const result = await whatsappService.sendQuestion(
-            player.user.whatsapp_number,
-            question.question_text,
-            [question.option_a, question.option_b, question.option_c, question.option_d],
-            questionIndex + 1,
-            question.correct_answer
-          );
-          console.log(`✅ Question ${questionIndex + 1} sent to ${player.user.whatsapp_number}`);
-          return result;
-        } catch (error) {
-          console.error(`❌ Failed to send question to ${player.user.whatsapp_number}:`, error);
-          return null;
-        }
-      });
+      // Use queue system for scalability
+      const questionPromises = alivePlayers.map(player => 
+        queueService.addMessage('send_question', {
+          to: player.user.whatsapp_number,
+          gameId,
+          questionNumber: questionIndex + 1,
+          questionText: question.question_text,
+          options: [question.option_a, question.option_b, question.option_c, question.option_d],
+          correctAnswer: question.correct_answer,
+          timeLimit: question.time_limit || 14,
+          priority: 'high' // High priority for questions
+        })
+      );
       
-      // Wait for all questions to be sent
+      // Wait for all questions to be queued
       const results = await Promise.all(questionPromises);
       const successCount = results.filter(r => r !== null).length;
-      console.log(`📤 Question sending completed: ${successCount}/${playerCount} sent successfully`);
+      console.log(`📤 Question queuing completed: ${successCount}/${playerCount} queued successfully`);
       
-      // Add small buffer for WhatsApp delivery confirmation
-      console.log(`⏰ Waiting 2 seconds for delivery confirmation...`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for queue processing to complete (with timeout)
+      console.log(`⏰ Waiting for queue processing to complete...`);
+      await this.waitForQueueCompletion(gameId, questionIndex + 1, playerCount);
       
       console.log(`✅ Question delivery completed - timer will start now`);
 
@@ -856,6 +851,31 @@ Stick around to watch the finish! Reply "PLAY" for the next game.`,
       }
       throw error;
     }
+  }
+
+  // Wait for queue processing to complete with intelligent timeout
+  async waitForQueueCompletion(gameId, questionNumber, expectedCount) {
+    const maxWaitTime = 10000; // 10 seconds max wait
+    const checkInterval = 500; // Check every 500ms
+    const startTime = Date.now();
+    
+    console.log(`⏰ Waiting for ${expectedCount} questions to be processed...`);
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      // Check Redis for completion markers
+      const completionKey = `question_completed:${gameId}:${questionNumber}`;
+      const completedCount = await queueService.redis?.get(completionKey) || 0;
+      
+      if (parseInt(completedCount) >= expectedCount) {
+        console.log(`✅ All ${expectedCount} questions processed successfully`);
+        return;
+      }
+      
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    console.log(`⚠️ Queue processing timeout - proceeding with timer (${expectedCount} questions expected)`);
   }
 
   // Send question to all alive players

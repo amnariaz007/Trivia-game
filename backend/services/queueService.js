@@ -443,6 +443,19 @@ class QueueService {
     const whatsappService = require('./whatsappService');
     const result = await whatsappService.sendQuestion(to, questionText, options, questionNumber, correctAnswer);
     console.log(`✅ Question ${questionNumber} sent to ${to}, result:`, result);
+    
+    // Mark question completion for timing synchronization
+    if (gameId && this.redis) {
+      try {
+        const completionKey = `question_completed:${gameId}:${questionNumber}`;
+        await this.redis.incr(completionKey);
+        await this.redis.expire(completionKey, 300); // 5 minute TTL
+        console.log(`✅ Marked question ${questionNumber} completion for game ${gameId}`);
+      } catch (error) {
+        console.error('❌ Error marking question completion:', error);
+      }
+    }
+    
     return result;
   }
 
